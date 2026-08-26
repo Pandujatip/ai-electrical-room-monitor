@@ -52,6 +52,9 @@ function postureBadge(posture, lyingSec) {
 async function refresh() {
   try {
     const status = await fetch("/api/status", { cache: "no-store" }).then((r) => r.json());
+    if ($("headerTitle") && status.camera_name) {
+      $("headerTitle").textContent = status.camera_name + " Monitor";
+    }
     $("connection").textContent = status.connected ? "TERHUBUNG" : "TERPUTUS";
     $("connection").className = status.connected ? "green" : "red";
     setIndicator(status.status || "NO PERSON DETECTOR");
@@ -261,6 +264,10 @@ async function loadSettings() {
     if (waTargetInput && !waTargetInput.matches(":focus")) {
       waTargetInput.value = data.whatsapp_target || "";
     }
+    const cameraNameInput = document.getElementById("cameraNameInput");
+    if (cameraNameInput && !cameraNameInput.matches(":focus")) {
+      cameraNameInput.value = data.camera_name || "Electrical Room 1";
+    }
     if (toggleVoiceAlarm) toggleVoiceAlarm.checked = data.voice_alarm_enabled !== false;
     if (toggleWaPpe) toggleWaPpe.checked = data.alert_ppe_violation_enabled !== false;
     if (toggleWaFall) toggleWaFall.checked = data.alert_fall_emergency_enabled !== false;
@@ -287,6 +294,16 @@ async function saveSettings(partial) {
     settingsSaveStatus.style.color = "#c52222";
     settingsSaveStatus.textContent = "❌ Gagal menyimpan pengaturan.";
   }
+}
+
+const btnSaveRoomName = document.getElementById("btnSaveRoomName");
+if (btnSaveRoomName) {
+  btnSaveRoomName.addEventListener("click", () => {
+    const input = document.getElementById("cameraNameInput");
+    if (input && input.value.trim()) {
+      saveSettings({ camera_name: input.value.trim() });
+    }
+  });
 }
 
 if (toggleVoiceAlarm) {

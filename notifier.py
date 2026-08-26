@@ -16,6 +16,7 @@ logger = logging.getLogger("imou-notifier")
 CONFIG_FILE = Path(__file__).resolve().parent / "notification_settings.json"
 
 DEFAULT_SETTINGS: dict[str, Any] = {
+    "camera_name": "Electrical Room 1",
     "whatsapp_enabled": True,
     "whatsapp_target": "",  # e.g. "6281234567890" or "120363xxx@g.us"
     "voice_alarm_enabled": True,
@@ -181,6 +182,8 @@ class NotificationManager:
         if not self.settings.get("whatsapp_target"):
             return
 
+        room_name = self.settings.get("camera_name", "Electrical Room")
+
         for track in tracks:
             track_id = track["id"]
             name = track.get("name") or f"Person #{track_id}"
@@ -203,10 +206,12 @@ class NotificationManager:
                     v_str = " & ".join(violations)
                     self.dispatch_alert(
                         alert_key=f"ppe_violation_{person_key}",
-                        title="⚠️ PERINGATAN K3: PELANGGARAN APD",
+                        title=f"⚠️ PERINGATAN K3: PELANGGARAN APD [{room_name}]",
                         message=(
-                            f"Personel *{name}* terdeteksi berada di Ruang Elektrikal selama *{stay_sec} detik* "
-                            f"tanpa menggunakan *{v_str}*!\n\n"
+                            f"📍 *Lokasi:* *{room_name}*\n"
+                            f"👤 *Personel:* *{name}*\n"
+                            f"⏱️ *Durasi:* {stay_sec} detik\n"
+                            f"❌ *Pelanggaran APD:* Tidak memakai *{v_str}*!\n\n"
                             f"Harap segera gunakan APD lengkap sebelum melanjutkan pekerjaan."
                         ),
                         image_path=latest_snapshot_path,
@@ -217,12 +222,13 @@ class NotificationManager:
                 if posture == "FALLEN" and lying_sec >= 4:
                     self.dispatch_alert(
                         alert_key=f"fall_emergency_{person_key}",
-                        title="🚨 DARURAT K3: PERSONEL JATUH / PINGSAN!",
+                        title=f"🚨 DARURAT K3: PERSONEL JATUH / PINGSAN! [{room_name}]",
                         message=(
                             f"⚠️ *PERINGATAN DARURAT TINGGI!*\n"
-                            f"Personel *{name}* terdeteksi dalam kondisi *JATUH / PINGSAN* "
-                            f"(posisi tubuh tergeletak di lantai selama {lying_sec} detik).\n\n"
-                            f"🚨 *TIM RESCUE / K3 HARAP SEGERA CEK RUANG ELEKTRIKAL!*"
+                            f"📍 *Lokasi:* *{room_name}*\n"
+                            f"👤 *Personel:* *{name}*\n"
+                            f"⏱️ *Tergeletak di Lantai:* {lying_sec} detik\n\n"
+                            f"🚨 *TIM RESCUE / K3 HARAP SEGERA CEK LOKASI!*"
                         ),
                         image_path=latest_snapshot_path,
                     )
@@ -234,9 +240,11 @@ class NotificationManager:
                     mins = stay_sec // 60
                     self.dispatch_alert(
                         alert_key=f"er_overstay_{person_key}",
-                        title="⏱️ LAPORAN K3: DURASI AKTIVITAS DI RUANG ELEKTRIKAL",
+                        title=f"⏱️ LAPORAN K3: DURASI AKTIVITAS [{room_name}]",
                         message=(
-                            f"Personel *{name}* telah beraktivitas di Ruang Elektrikal selama *{mins} menit* ({stay_sec}s).\n"
+                            f"📍 *Lokasi:* *{room_name}*\n"
+                            f"👤 *Personel:* *{name}*\n"
+                            f"⏱️ *Total Durasi:* *{mins} menit* ({stay_sec}s)\n"
                             f"Batas izin durasi kerja standar: {overstay_threshold // 60} menit."
                         ),
                         image_path=latest_snapshot_path,
@@ -247,11 +255,13 @@ class NotificationManager:
                 if track.get("is_smoking"):
                     self.dispatch_alert(
                         alert_key=f"smoking_{person_key}",
-                        title="🔥 PERINGATAN K3: DETEKSI AKTIVITAS MEROKOK!",
+                        title=f"🔥 PERINGATAN K3: DETEKSI MEROKOK! [{room_name}]",
                         message=(
                             f"⚠️ *PELANGGARAN K3 TINGKAT TINGGI!*\n"
-                            f"Personel *{name}* terdeteksi melakukan aktivitas *MEROKOK* di Ruang Elektrikal ({track.get('smoking_seconds', 0)}s)!\n\n"
-                            f"🚨 *DILARANG MEROKOK DI AREA RUANG ELEKTRIKAL KARENA BAHAYA KEBAKARAN & ARC FLASH!*"
+                            f"📍 *Lokasi:* *{room_name}*\n"
+                            f"👤 *Personel:* *{name}*\n"
+                            f"Terdeteksi melakukan aktivitas *MEROKOK* ({track.get('smoking_seconds', 0)}s)!\n\n"
+                            f"🚨 *DILARANG MEROKOK DI AREA INI KARENA BAHAYA KEBAKARAN & ARC FLASH!*"
                         ),
                         image_path=latest_snapshot_path,
                     )

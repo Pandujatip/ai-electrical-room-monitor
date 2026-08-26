@@ -1091,7 +1091,9 @@ class PersonMonitor:
                 }
             )
         longest = max((item["stay_seconds"] for item in tracks), default=0)
+        cam_name = notifier.settings.get("camera_name") or self.settings.camera_name
         self._set_status(
+            camera_name=cam_name,
             connected=True,
             status=f"PEOPLE: {len(tracks)}",
             score=float(len(tracks)),
