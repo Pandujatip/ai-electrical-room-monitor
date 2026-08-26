@@ -1,0 +1,260 @@
+from __future__ import annotations
+
+import json
+import logging
+import threading
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+logger = logging.getLogger("imou-notifier")
+
+CONFIG_FILE = Path(__file__).resolve().parent / "notification_settings.json"
+
+DEFAULT_SETTINGS: dict[str, Any] = {
+    "whatsapp_enabled": True,
+    "whatsapp_target": "",  # e.g. "6281234567890" or "120363xxx@g.us"
+    "voice_alarm_enabled": True,
+    "alert_ppe_violation_enabled": True,
+    "alert_ppe_violation_seconds": 60,  # 1 menit
+    "alert_fall_emergency_enabled": True,
+    "alert_er_activity_enabled": True,
+    "alert_er_activity_seconds": 300,  # 5 menit
+    "alert_smoking_enabled": True,
+    "alert_cooldown_seconds": 3600,  # 1 jam (3600s) per orang agar tidak spam
+}
+
+
+class NotificationManager:
+    """Manages WhatsApp alerting with dynamic settings, snapshot attachments, and cooldowns."""
+
+    def __init__(self, bridge_url: str = "http://127.0.0.1:3001") -> None:
+        self.bridge_url = bridge_url.rstrip("/")
+        self._lock = threading.Lock()
+        self._last_alert_times: dict[str, float] = {}
+        self.settings: dict[str, Any] = self._load_settings()
+
+    def _load_settings(self) -> dict[str, Any]:
+        if CONFIG_FILE.exists():
+            try:
+                with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                    loaded = json.load(f)
+                    res = dict(DEFAULT_SETTINGS)
+                    res.update(loaded)
+                    return res
+            except Exception as exc:
+                logger.warning("Gagal memuat notification_settings.json: %s", exc)
+        return dict(DEFAULT_SETTINGS)
+
+    def save_settings(self, new_settings: dict[str, Any]) -> dict[str, Any]:
+        with self._lock:
+            self.settings.update(new_settings)
+            try:
+                with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+                    json.dump(self.settings, f, indent=2)
+            except Exception as exc:
+                logger.error("Gagal menyimpan notification_settings.json: %s", exc)
+        return dict(self.settings)
+
+    def get_whatsapp_status(self) -> dict[str, Any]:
+        try:
+            req = urllib.request.Request(f"{self.bridge_url}/status", headers={"User-Agent": "ImouMonitor"})
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                return {
+                    "ok": True,
+                    "bridge_connected": True,
+                    "status": data.get("status", "UNKNOWN"),
+                    "qr": data.get("qr"),
+                    "user": data.get("user"),
+                }
+        except Exception as exc:
+            return {
+                "ok": False,
+                "bridge_connected": False,
+                "status": "SERVICE_OFFLINE",
+                "error": str(exc),
+            }
+
+    def get_whatsapp_groups(self) -> list[dict[str, Any]]:
+        try:
+            req = urllib.request.Request(f"{self.bridge_url}/groups", headers={"User-Agent": "ImouMonitor"})
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                return data.get("groups", [])
+        except Exception as exc:
+            logger.warning("Gagal mengambil daftar grup WhatsApp: %s", exc)
+            return []
+
+    def logout_whatsapp(self) -> dict[str, Any]:
+        try:
+            req = urllib.request.Request(
+                f"{self.bridge_url}/logout",
+                data=b"{}",
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def send_whatsapp_message(
+        self,
+        to: str,
+        message: str,
+        image_path: str | Path | None = None,
+    ) -> dict[str, Any]:
+        try:
+            payload = {"to": str(to).strip(), "message": message}
+            if image_path:
+                p = Path(image_path)
+                if p.exists():
+                    payload["image_path"] = str(p.resolve())
+
+            data = json.dumps(payload).encode("utf-8")
+            req = urllib.request.Request(
+                f"{self.bridge_url}/send",
+                data=data,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as he:
+            err_body = he.read().decode("utf-8")
+            return {"ok": False, "error": f"HTTP {he.code}: {err_body}"}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def dispatch_alert(
+        self,
+        alert_key: str,
+        title: str,
+        message: str,
+        image_path: str | Path | None = None,
+        force: bool = False,
+    ) -> bool:
+        """Dispatch alert if WhatsApp is enabled and cooldown has passed. Non-blocking."""
+        if not self.settings.get("whatsapp_enabled") and not force:
+            return False
+
+        target = self.settings.get("whatsapp_target", "").strip()
+        if not target and not force:
+            return False
+
+        now = time.monotonic()
+        cooldown = float(self.settings.get("alert_cooldown_seconds", 120))
+
+        with self._lock:
+            last_sent = self._last_alert_times.get(alert_key, 0.0)
+            if not force and (now - last_sent < cooldown):
+                return False
+            self._last_alert_times[alert_key] = now
+
+        now_str = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        full_text = f"*{title}*\n\n{message}\n\n🕒 _Waktu: {now_str}_\n📍 _Lokasi: Ruang Panel Elektrikal_"
+
+        def _worker() -> None:
+            res = self.send_whatsapp_message(target, full_text, image_path)
+            if res.get("ok"):
+                logger.info("WhatsApp Alert successfully sent: %s -> %s", alert_key, target)
+            else:
+                logger.warning("WhatsApp Alert failed: %s -> %s", alert_key, res.get("error"))
+
+        t = threading.Thread(target=_worker, name=f"wa-alert-{alert_key}", daemon=True)
+        t.start()
+        return True
+
+    def process_tracks_and_alerts(
+        self,
+        tracks: list[dict[str, Any]],
+        latest_snapshot_path: str | Path | None = None,
+    ) -> None:
+        """Evaluate tracks against 3 safety alert rules."""
+        if not self.settings.get("whatsapp_enabled"):
+            return
+        if not self.settings.get("whatsapp_target"):
+            return
+
+        for track in tracks:
+            track_id = track["id"]
+            name = track.get("name") or f"Person #{track_id}"
+            stay_sec = int(track.get("stay_seconds", 0))
+            helmet = track.get("helmet", "UNKNOWN")
+            vest = track.get("vest", "UNKNOWN")
+            posture = track.get("posture", "STANDING")
+            lying_sec = int(track.get("lying_seconds", 0))
+            person_key = name.strip().lower()
+
+            # Rule 1: APD Non-Compliance for >= 1 Minute (60 seconds)
+            if self.settings.get("alert_ppe_violation_enabled", True):
+                ppe_threshold = int(self.settings.get("alert_ppe_violation_seconds", 60))
+                if (helmet == "MISSING" or vest == "MISSING") and stay_sec >= ppe_threshold:
+                    violations = []
+                    if helmet == "MISSING":
+                        violations.append("Helm Keselamatan")
+                    if vest == "MISSING":
+                        violations.append("Rompi / Baju Kerja K3")
+                    v_str = " & ".join(violations)
+                    self.dispatch_alert(
+                        alert_key=f"ppe_violation_{person_key}",
+                        title="⚠️ PERINGATAN K3: PELANGGARAN APD",
+                        message=(
+                            f"Personel *{name}* terdeteksi berada di Ruang Elektrikal selama *{stay_sec} detik* "
+                            f"tanpa menggunakan *{v_str}*!\n\n"
+                            f"Harap segera gunakan APD lengkap sebelum melanjutkan pekerjaan."
+                        ),
+                        image_path=latest_snapshot_path,
+                    )
+
+            # Rule 2: Unconscious / Fall Emergency
+            if self.settings.get("alert_fall_emergency_enabled", True):
+                if posture == "FALLEN" and lying_sec >= 4:
+                    self.dispatch_alert(
+                        alert_key=f"fall_emergency_{person_key}",
+                        title="🚨 DARURAT K3: PERSONEL JATUH / PINGSAN!",
+                        message=(
+                            f"⚠️ *PERINGATAN DARURAT TINGGI!*\n"
+                            f"Personel *{name}* terdeteksi dalam kondisi *JATUH / PINGSAN* "
+                            f"(posisi tubuh tergeletak di lantai selama {lying_sec} detik).\n\n"
+                            f"🚨 *TIM RESCUE / K3 HARAP SEGERA CEK RUANG ELEKTRIKAL!*"
+                        ),
+                        image_path=latest_snapshot_path,
+                    )
+
+            # Rule 3: Electrical Room Activity > 5 Minutes (300 seconds)
+            if self.settings.get("alert_er_activity_enabled", True):
+                overstay_threshold = int(self.settings.get("alert_er_activity_seconds", 300))
+                if stay_sec >= overstay_threshold:
+                    mins = stay_sec // 60
+                    self.dispatch_alert(
+                        alert_key=f"er_overstay_{person_key}",
+                        title="⏱️ LAPORAN K3: DURASI AKTIVITAS DI RUANG ELEKTRIKAL",
+                        message=(
+                            f"Personel *{name}* telah beraktivitas di Ruang Elektrikal selama *{mins} menit* ({stay_sec}s).\n"
+                            f"Batas izin durasi kerja standar: {overstay_threshold // 60} menit."
+                        ),
+                        image_path=latest_snapshot_path,
+                    )
+
+            # Rule 4: Smoking Detection Alert
+            if self.settings.get("alert_smoking_enabled", True):
+                if track.get("is_smoking"):
+                    self.dispatch_alert(
+                        alert_key=f"smoking_{person_key}",
+                        title="🔥 PERINGATAN K3: DETEKSI AKTIVITAS MEROKOK!",
+                        message=(
+                            f"⚠️ *PELANGGARAN K3 TINGKAT TINGGI!*\n"
+                            f"Personel *{name}* terdeteksi melakukan aktivitas *MEROKOK* di Ruang Elektrikal ({track.get('smoking_seconds', 0)}s)!\n\n"
+                            f"🚨 *DILARANG MEROKOK DI AREA RUANG ELEKTRIKAL KARENA BAHAYA KEBAKARAN & ARC FLASH!*"
+                        ),
+                        image_path=latest_snapshot_path,
+                    )
+
+
+notifier = NotificationManager()

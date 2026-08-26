@@ -1,0 +1,30 @@
+# Virtual Environment & Python Cache
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Databases & Dynamic Runtime Data
+events.db
+events.db-journal
+notification_settings.json
+.env
+
+# Snapshots & User Photos (Privacy)
+snapshots/*
+!snapshots/.gitkeep
+logs/*
+!logs/.gitkeep
+known_faces/*
+!known_faces/.gitkeep
+
+# WhatsApp Authentication (Do not commit sensitive tokens)
+whatsapp_auth/
+whatsapp-bridge/whatsapp_auth/
+whatsapp-bridge/node_modules/
+
+# OS Specific
+Thumbs.db
+.DS_Store
+*.tmp

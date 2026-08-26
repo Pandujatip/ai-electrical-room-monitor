@@ -1,0 +1,16 @@
+{
+  "name": "whatsapp-bridge",
+  "version": "1.0.0",
+  "description": "WhatsApp QR and Message Dispatcher Bridge for Imou Monitor",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.13",
+    "express": "^4.21.2",
+    "qrcode": "^1.5.4",
+    "pino": "^9.6.0"
+  }
+}

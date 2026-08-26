@@ -1,0 +1,36 @@
+:root { font-family: Segoe UI, Arial, sans-serif; color: #172033; background: #f3f5f8; }
+body { margin: 0; }
+.container { max-width: 1100px; margin: 0 auto; padding: 24px; }
+header { margin-bottom: 20px; }
+h1 { margin: 0 0 6px; }
+header p { margin: 0; color: #64748b; }
+.cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+.card, .panel { background: white; border: 1px solid #dbe2ea; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px #1f29370d; }
+.card span { display: block; color: #64748b; font-size: 0.9rem; margin-bottom: 8px; }
+.card strong { font-size: 1.1rem; }
+.green { color: #16803c; }
+.red { color: #c52222; }
+.unknown { color: #856404; }
+.panel { margin-bottom: 16px; overflow: auto; }
+.safety-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.safety-grid div { background: #f8fafc; border-radius: 8px; padding: 12px; }
+.safety-grid span { display: block; color: #64748b; margin-bottom: 6px; }
+.safety-grid strong { font-size: 0.95rem; }
+h3 { margin: 18px 0 8px; font-size: 1rem; }
+.table-wrap { overflow-x: auto; }
+#models { font-size: 0.78rem; overflow-wrap: anywhere; }
+h2 { margin-top: 0; font-size: 1.1rem; }
+#snapshot { display: block; max-width: 100%; max-height: 520px; margin: auto; border-radius: 8px; background: #eef2f7; }
+table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+th, td { text-align: left; padding: 9px; border-bottom: 1px solid #e5e7eb; }
+.note { color: #64748b; font-size: 0.9rem; }
+@media (max-width: 760px) { .cards { grid-template-columns: repeat(2, 1fr); } }
+
+/* Modern Toggle Switch */
+.switch { position: relative; display: inline-block; width: 44px; height: 24px; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #cbd5e1; transition: .3s; border-radius: 24px; }
+.slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .3s; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+input:checked + .slider { background-color: #059669; }
+input:checked + .slider:before { transform: translateX(20px); }
+
