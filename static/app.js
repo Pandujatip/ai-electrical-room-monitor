@@ -273,6 +273,10 @@ async function loadSettings() {
     if (toggleWaFall) toggleWaFall.checked = data.alert_fall_emergency_enabled !== false;
     if (toggleWaSmoking) toggleWaSmoking.checked = data.alert_smoking_enabled !== false;
     if (toggleWaOverstay) toggleWaOverstay.checked = data.alert_er_activity_enabled !== false;
+    const cooldownSelect = document.getElementById("cooldownSelect");
+    if (cooldownSelect && data.alert_cooldown_seconds) {
+      cooldownSelect.value = String(data.alert_cooldown_seconds);
+    }
   } catch (err) {}
 }
 
@@ -303,6 +307,13 @@ if (btnSaveRoomName) {
     if (input && input.value.trim()) {
       saveSettings({ camera_name: input.value.trim() });
     }
+  });
+}
+
+const cooldownSelectEl = document.getElementById("cooldownSelect");
+if (cooldownSelectEl) {
+  cooldownSelectEl.addEventListener("change", () => {
+    saveSettings({ alert_cooldown_seconds: parseInt(cooldownSelectEl.value, 10) });
   });
 }
 

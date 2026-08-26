@@ -149,7 +149,7 @@ class NotificationManager:
             return False
 
         now = time.monotonic()
-        cooldown = float(self.settings.get("alert_cooldown_seconds", 120))
+        cooldown = float(self.settings.get("alert_cooldown_seconds", 3600))
 
         with self._lock:
             last_sent = self._last_alert_times.get(alert_key, 0.0)
