@@ -11,9 +11,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import re
+
 logger = logging.getLogger("imou-notifier")
 
 CONFIG_FILE = Path(__file__).resolve().parent / "notification_settings.json"
+COOLDOWN_FILE = Path(__file__).resolve().parent / ".alert_cooldowns.json"
 
 DEFAULT_SETTINGS: dict[str, Any] = {
     "camera_name": "Electrical Room 1",
@@ -30,14 +33,42 @@ DEFAULT_SETTINGS: dict[str, Any] = {
 }
 
 
+def _canonical_person_key(name: str) -> str:
+    """Normalize names like 'Pandu 7130', 'pandu_7130', 'pandu' -> 'pandu'."""
+    raw = (name or "").strip().lower()
+    cleaned = re.sub(r"[^a-z0-9]", "", raw)
+    match = re.match(r"^([a-z]+)", cleaned)
+    if match and not cleaned.startswith("person") and not cleaned.startswith("track") and not cleaned.startswith("id"):
+        return match.group(1)
+    if cleaned and not cleaned.startswith("person") and not cleaned.startswith("track"):
+        return cleaned
+    return "unnamed_violator"
+
+
 class NotificationManager:
-    """Manages WhatsApp alerting with dynamic settings, snapshot attachments, and cooldowns."""
+    """Manages WhatsApp alerting with dynamic settings, snapshot attachments, and persistent cooldowns."""
 
     def __init__(self, bridge_url: str = "http://127.0.0.1:3001") -> None:
         self.bridge_url = bridge_url.rstrip("/")
         self._lock = threading.Lock()
-        self._last_alert_times: dict[str, float] = {}
+        self._last_alert_times: dict[str, float] = self._load_cooldowns()
         self.settings: dict[str, Any] = self._load_settings()
+
+    def _load_cooldowns(self) -> dict[str, float]:
+        if COOLDOWN_FILE.exists():
+            try:
+                with open(COOLDOWN_FILE, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        return {}
+
+    def _save_cooldowns(self) -> None:
+        try:
+            with open(COOLDOWN_FILE, "w", encoding="utf-8") as f:
+                json.dump(self._last_alert_times, f)
+        except Exception:
+            pass
 
     def _load_settings(self) -> dict[str, Any]:
         if CONFIG_FILE.exists():
@@ -148,7 +179,7 @@ class NotificationManager:
         if not target and not force:
             return False
 
-        now = time.monotonic()
+        now = time.time()
         cooldown = float(self.settings.get("alert_cooldown_seconds", 3600))
 
         with self._lock:
@@ -156,6 +187,7 @@ class NotificationManager:
             if not force and (now - last_sent < cooldown):
                 return False
             self._last_alert_times[alert_key] = now
+            self._save_cooldowns()
 
         now_str = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         full_text = f"*{title}*\n\n{message}\n\n🕒 _Waktu: {now_str}_"
@@ -176,7 +208,7 @@ class NotificationManager:
         tracks: list[dict[str, Any]],
         latest_snapshot_path: str | Path | None = None,
     ) -> None:
-        """Evaluate tracks against 3 safety alert rules."""
+        """Evaluate tracks against safety alert rules."""
         if not self.settings.get("whatsapp_enabled"):
             return
         if not self.settings.get("whatsapp_target"):
@@ -192,7 +224,7 @@ class NotificationManager:
             vest = track.get("vest", "UNKNOWN")
             posture = track.get("posture", "STANDING")
             lying_sec = int(track.get("lying_seconds", 0))
-            person_key = name.strip().lower()
+            person_key = _canonical_person_key(name)
 
             # Rule 1: APD Non-Compliance for >= 1 Minute (60 seconds)
             if self.settings.get("alert_ppe_violation_enabled", True):
