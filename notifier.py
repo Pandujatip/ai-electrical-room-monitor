@@ -158,7 +158,7 @@ class NotificationManager:
             self._last_alert_times[alert_key] = now
 
         now_str = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-        full_text = f"*{title}*\n\n{message}\n\n🕒 _Waktu: {now_str}_\n📍 _Lokasi: Ruang Panel Elektrikal_"
+        full_text = f"*{title}*\n\n{message}\n\n🕒 _Waktu: {now_str}_"
 
         def _worker() -> None:
             res = self.send_whatsapp_message(target, full_text, image_path)
@@ -206,10 +206,10 @@ class NotificationManager:
                     v_str = " & ".join(violations)
                     self.dispatch_alert(
                         alert_key=f"ppe_violation_{person_key}",
-                        title=f"⚠️ PERINGATAN K3: PELANGGARAN APD [{room_name}]",
+                        title="⚠️ PERINGATAN K3: PELANGGARAN APD",
                         message=(
-                            f"📍 *Lokasi:* *{room_name}*\n"
-                            f"👤 *Personel:* *{name}*\n"
+                            f"📍 *Lokasi:* {room_name}\n"
+                            f"👤 *Personel:* {name}\n"
                             f"⏱️ *Durasi:* {stay_sec} detik\n"
                             f"❌ *Pelanggaran APD:* Tidak memakai *{v_str}*!\n\n"
                             f"Harap segera gunakan APD lengkap sebelum melanjutkan pekerjaan."
@@ -222,11 +222,11 @@ class NotificationManager:
                 if posture == "FALLEN" and lying_sec >= 4:
                     self.dispatch_alert(
                         alert_key=f"fall_emergency_{person_key}",
-                        title=f"🚨 DARURAT K3: PERSONEL JATUH / PINGSAN! [{room_name}]",
+                        title="🚨 DARURAT K3: PERSONEL JATUH / PINGSAN!",
                         message=(
                             f"⚠️ *PERINGATAN DARURAT TINGGI!*\n"
-                            f"📍 *Lokasi:* *{room_name}*\n"
-                            f"👤 *Personel:* *{name}*\n"
+                            f"📍 *Lokasi:* {room_name}\n"
+                            f"👤 *Personel:* {name}\n"
                             f"⏱️ *Tergeletak di Lantai:* {lying_sec} detik\n\n"
                             f"🚨 *TIM RESCUE / K3 HARAP SEGERA CEK LOKASI!*"
                         ),
@@ -240,10 +240,10 @@ class NotificationManager:
                     mins = stay_sec // 60
                     self.dispatch_alert(
                         alert_key=f"er_overstay_{person_key}",
-                        title=f"⏱️ LAPORAN K3: DURASI AKTIVITAS [{room_name}]",
+                        title="⏱️ LAPORAN K3: DURASI AKTIVITAS MELEBIHI BATAS",
                         message=(
-                            f"📍 *Lokasi:* *{room_name}*\n"
-                            f"👤 *Personel:* *{name}*\n"
+                            f"📍 *Lokasi:* {room_name}\n"
+                            f"👤 *Personel:* {name}\n"
                             f"⏱️ *Total Durasi:* *{mins} menit* ({stay_sec}s)\n"
                             f"Batas izin durasi kerja standar: {overstay_threshold // 60} menit."
                         ),
@@ -255,11 +255,11 @@ class NotificationManager:
                 if track.get("is_smoking"):
                     self.dispatch_alert(
                         alert_key=f"smoking_{person_key}",
-                        title=f"🔥 PERINGATAN K3: DETEKSI MEROKOK! [{room_name}]",
+                        title="🔥 PERINGATAN K3: DETEKSI AKTIVITAS MEROKOK!",
                         message=(
                             f"⚠️ *PELANGGARAN K3 TINGKAT TINGGI!*\n"
-                            f"📍 *Lokasi:* *{room_name}*\n"
-                            f"👤 *Personel:* *{name}*\n"
+                            f"📍 *Lokasi:* {room_name}\n"
+                            f"👤 *Personel:* {name}\n"
                             f"Terdeteksi melakukan aktivitas *MEROKOK* ({track.get('smoking_seconds', 0)}s)!\n\n"
                             f"🚨 *DILARANG MEROKOK DI AREA INI KARENA BAHAYA KEBAKARAN & ARC FLASH!*"
                         ),
