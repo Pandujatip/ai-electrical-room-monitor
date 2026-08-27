@@ -29,6 +29,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "alert_er_activity_enabled": True,
     "alert_er_activity_seconds": 300,  # 5 menit
     "alert_smoking_enabled": True,
+    "alert_fire_emergency_enabled": True,
+    "alert_smoke_emergency_enabled": True,
     "alert_camera_offline_enabled": True,
     "alert_cooldown_seconds": 3600,  # 1 jam (3600s) per orang agar tidak spam
     "auto_tracking_enabled": False,
@@ -302,6 +304,55 @@ class NotificationManager:
                         ),
                         image_path=latest_snapshot_path,
                     )
+
+    def notify_fire_emergency(
+        self,
+        room_name: str = "Electrical Room",
+        confidence: float = 1.0,
+        image_path: str | Path | None = None,
+    ) -> bool:
+        """Dispatch immediate high-priority alert for fire detection."""
+        if not self.settings.get("alert_fire_emergency_enabled", True):
+            return False
+        room_key = re.sub(r"[^a-z0-9]", "", room_name.lower()) or "default_room"
+        return self.dispatch_alert(
+            alert_key=f"fire_emergency_{room_key}",
+            title="🚨🚨 DARURAT TINGGI: DETEKSI KOBARAN API / KEBAKARAN! 🚨🚨",
+            message=(
+                f"🔥 *BAHAYA TINGKAT TINGGI (FIRE HAZARD)!*\n"
+                f"📍 *Lokasi:* {room_name}\n"
+                f"📊 *Tingkat Keyakinan:* {int(confidence * 100)}%\n\n"
+                f"⚠️ *Terdeteksi kobaran api / percikan api di Ruang Elektrikal!*\n"
+                f"🚨 *SEGERA AKTIFKAN SISTEM PEMADAM (APAR/FM200) DAN LAKUKAN EVAKUASI DARURAT!*"
+            ),
+            image_path=image_path,
+            force=True,  # Bypass normal cooldown for critical life safety
+        )
+
+    def notify_smoke_emergency(
+        self,
+        room_name: str = "Electrical Room",
+        confidence: float = 1.0,
+        image_path: str | Path | None = None,
+    ) -> bool:
+        """Dispatch high-priority alert for thick smoke detection."""
+        if not self.settings.get("alert_smoke_emergency_enabled", True):
+            return False
+        room_key = re.sub(r"[^a-z0-9]", "", room_name.lower()) or "default_room"
+        return self.dispatch_alert(
+            alert_key=f"smoke_emergency_{room_key}",
+            title="⚠️🚨 DARURAT K3: DETEKSI GUMPALAN ASAP TEBAL!",
+            message=(
+                f"🌫️ *PERINGATAN DINI BAHAYA ASAP (THICK SMOKE HAZARD)!*\n"
+                f"📍 *Lokasi:* {room_name}\n"
+                f"📊 *Tingkat Keyakinan:* {int(confidence * 100)}%\n\n"
+                f"⚠️ *Terdeteksi gumpalan asap tebal di Ruang Elektrikal!*\n"
+                f"Kemungkinan terjadi korsleting atau awal kebakaran panel listrik.\n"
+                f"🚨 *TIM TEKNISI & K3 HARAP SEGERA CEK LOKASI!*"
+            ),
+            image_path=image_path,
+            force=True,
+        )
 
     def notify_camera_status(
         self,

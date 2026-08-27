@@ -72,6 +72,18 @@ async function refresh() {
       $("smokingStatus").textContent = status.smoking_detected ? "⚠️ MEROKOK!" : "AMAN";
       $("smokingStatus").className = status.smoking_detected ? "red" : "green";
     }
+    if ($("fireSmokeStatus")) {
+      if (status.fire_detected) {
+        $("fireSmokeStatus").textContent = "🔥 KOBARAN API!";
+        $("fireSmokeStatus").className = "red";
+      } else if (status.smoke_emergency_detected) {
+        $("fireSmokeStatus").textContent = "🌫️ ASAP TEBAL!";
+        $("fireSmokeStatus").className = "red";
+      } else {
+        $("fireSmokeStatus").textContent = "AMAN";
+        $("fireSmokeStatus").className = "green";
+      }
+    }
     $("voiceAlarm").textContent = status.voice_alarm || "AKTIF";
     $("latency").textContent = `${status.inference_ms || 0} ms`;
     $("updated").textContent = status.updated_at ? new Date(status.updated_at).toLocaleString() : "-";
@@ -272,6 +284,8 @@ async function loadSettings() {
     if (toggleWaPpe) toggleWaPpe.checked = data.alert_ppe_violation_enabled !== false;
     if (toggleWaFall) toggleWaFall.checked = data.alert_fall_emergency_enabled !== false;
     if (toggleWaSmoking) toggleWaSmoking.checked = data.alert_smoking_enabled !== false;
+    const toggleWaFire = document.getElementById("toggleWaFire");
+    if (toggleWaFire) toggleWaFire.checked = data.alert_fire_emergency_enabled !== false;
     if (toggleWaOverstay) toggleWaOverstay.checked = data.alert_er_activity_enabled !== false;
     const toggleWaCameraOffline = document.getElementById("toggleWaCameraOffline");
     if (toggleWaCameraOffline) toggleWaCameraOffline.checked = data.alert_camera_offline_enabled !== false;
@@ -339,6 +353,15 @@ if (toggleWaFall) {
 if (toggleWaSmoking) {
   toggleWaSmoking.addEventListener("change", () => {
     saveSettings({ alert_smoking_enabled: toggleWaSmoking.checked });
+  });
+}
+const toggleWaFire = document.getElementById("toggleWaFire");
+if (toggleWaFire) {
+  toggleWaFire.addEventListener("change", () => {
+    saveSettings({
+      alert_fire_emergency_enabled: toggleWaFire.checked,
+      alert_smoke_emergency_enabled: toggleWaFire.checked,
+    });
   });
 }
 if (toggleWaOverstay) {

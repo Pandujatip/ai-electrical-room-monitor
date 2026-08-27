@@ -691,6 +691,13 @@ class PersonMonitor:
         self._last_ppe_event_status: str | None = None
         self._last_ppe_event_time = 0.0
         self._pending_ppe_event: tuple[str, str, float] | None = None
+        self._latest_fire: list[dict[str, Any]] = []
+        self._fire_detected: bool = False
+        self._smoke_emergency_detected: bool = False
+        self._fire_first_seen: float | None = None
+        self._smoke_first_seen: float | None = None
+        self._fire_alert_triggered: bool = False
+        self._smoke_alert_triggered: bool = False
         self.ptz = PTZController(self.settings.rtsp_url)
         self._auto_track_locked_id: int | None = None
         self._auto_track_last_seen: float = 0.0
@@ -728,6 +735,14 @@ class PersonMonitor:
                 self._pose_model = None
         except Exception:
             self._pose_model = None
+        try:
+            fire_path = self._resolve_model_path(self.settings.fire_model)
+            if fire_path.exists():
+                self._fire_model = YOLO(str(fire_path))
+            else:
+                self._fire_model = None
+        except Exception:
+            self._fire_model = None
         if self._detector_errors:
             self._status["last_error"] = "; ".join(self._detector_errors)
         if self._person_model is None:
@@ -839,6 +854,12 @@ class PersonMonitor:
                         ):
                             self._latest_ppe = self._detect_ppe(frame)
                             self._latest_ppe_frame = self._frame_number
+                        if (
+                            getattr(self, "_fire_model", None) is not None
+                            and self._person_inference_count % getattr(self.settings, "fire_process_interval", 2) == 0
+                        ):
+                            self._latest_fire = self._detect_fire_and_smoke(frame)
+                            self._update_fire_states(self._latest_fire, frame=frame)
                         self._update_tracks(people, frame=frame)
                         self._update_ppe_states()
                         self._process_auto_tracking(frame.shape)
@@ -1075,6 +1096,114 @@ class PersonMonitor:
                         }
                     )
         return detections
+
+    def _detect_fire_and_smoke(self, frame: np.ndarray) -> list[dict[str, Any]]:
+        if not getattr(self.settings, "fire_detection_enabled", True):
+            return []
+        if getattr(self, "_fire_model", None) is None:
+            return []
+
+        detections: list[dict[str, Any]] = []
+        try:
+            results = self._fire_model.predict(
+                source=frame,
+                conf=min(self.settings.fire_confidence, self.settings.smoke_confidence),
+                iou=0.45,
+                imgsz=self.settings.yolo_imgsz,
+                device=self.settings.yolo_device,
+                verbose=False,
+            )
+            names = self._fire_model.names
+            for result in results:
+                if result.boxes is None:
+                    continue
+                for xyxy, cls_id, conf in zip(
+                    result.boxes.xyxy.cpu().numpy().astype(int),
+                    result.boxes.cls.int().cpu().tolist(),
+                    result.boxes.conf.cpu().numpy().tolist(),
+                ):
+                    raw_label = str(names[int(cls_id)]).lower()
+                    label = "fire" if "fire" in raw_label else "smoke"
+                    conf_thresh = self.settings.fire_confidence if label == "fire" else self.settings.smoke_confidence
+                    if float(conf) < conf_thresh:
+                        continue
+                    x1, y1, x2, y2 = xyxy.tolist()
+                    box = (x1, y1, x2 - x1, y2 - y1)
+                    detections.append(
+                        {
+                            "box": box,
+                            "label": label,
+                            "confidence": float(conf),
+                        }
+                    )
+        except Exception as exc:
+            logger.error("Fire/smoke inference error: %s", exc)
+        return detections
+
+    def _update_fire_states(self, fire_detections: list[dict[str, Any]], frame: np.ndarray | None = None) -> None:
+        now = time.monotonic()
+        cam_name = notifier.settings.get("camera_name") or self.settings.camera_name
+
+        has_fire = any(d["label"] == "fire" for d in fire_detections)
+        has_smoke = any(d["label"] == "smoke" for d in fire_detections)
+
+        # 1. Fire Evaluation
+        if has_fire:
+            if self._fire_first_seen is None:
+                self._fire_first_seen = now
+            fire_dur = now - self._fire_first_seen
+            if fire_dur >= self.settings.fire_debounce_seconds:
+                self._fire_detected = True
+                if not self._fire_alert_triggered:
+                    self._fire_alert_triggered = True
+                    best_conf = max((d["confidence"] for d in fire_detections if d["label"] == "fire"), default=1.0)
+                    self.store.add_event(
+                        cam_name,
+                        "FIRE_EMERGENCY",
+                        float(best_conf),
+                        message="🚨 BAHAYA KEBAKARAN: Kobaran api terdeteksi di Ruang Elektrikal!",
+                    )
+                    # Trigger vocal alarm
+                    if hasattr(self, "_voice_alarm") and self._voice_alarm.enabled:
+                        self._voice_alarm.trigger_custom(
+                            str(self.settings.fire_audio_file),
+                            reason="FIRE",
+                            cooldown=15.0,
+                        )
+        else:
+            if self._fire_first_seen and (now - self._fire_first_seen > 3.0):
+                self._fire_first_seen = None
+                self._fire_detected = False
+                self._fire_alert_triggered = False
+
+        # 2. Dense Smoke Evaluation
+        if has_smoke:
+            if self._smoke_first_seen is None:
+                self._smoke_first_seen = now
+            smoke_dur = now - self._smoke_first_seen
+            if smoke_dur >= self.settings.smoke_emergency_debounce_seconds:
+                self._smoke_emergency_detected = True
+                if not self._smoke_alert_triggered:
+                    self._smoke_alert_triggered = True
+                    best_conf = max((d["confidence"] for d in fire_detections if d["label"] == "smoke"), default=1.0)
+                    self.store.add_event(
+                        cam_name,
+                        "THICK_SMOKE_EMERGENCY",
+                        float(best_conf),
+                        message="⚠️ DARURAT ASAP TEBAL: Gumpalan asap kebakaran terdeteksi di Ruang Elektrikal!",
+                    )
+                    # Trigger vocal alarm
+                    if hasattr(self, "_voice_alarm") and self._voice_alarm.enabled:
+                        self._voice_alarm.trigger_custom(
+                            str(self.settings.fire_audio_file),
+                            reason="SMOKE_EMERGENCY",
+                            cooldown=20.0,
+                        )
+        else:
+            if self._smoke_first_seen and (now - self._smoke_first_seen > 3.0):
+                self._smoke_first_seen = None
+                self._smoke_emergency_detected = False
+                self._smoke_alert_triggered = False
 
     def _update_tracks(self, people: list[dict[str, Any]], frame: np.ndarray | None = None) -> None:
         now = time.monotonic()
@@ -1341,6 +1470,19 @@ class PersonMonitor:
             )
         longest = max((item["stay_seconds"] for item in tracks), default=0)
         cam_name = notifier.settings.get("camera_name") or self.settings.camera_name
+        fire_cnt = len([d for d in self._latest_fire if d["label"] == "fire"])
+        smoke_cnt = len([d for d in self._latest_fire if d["label"] == "smoke"])
+
+        # Determine overall safety health status
+        if self._fire_detected:
+            h_stat = "🔥 BAHAYA KEBAKARAN (FIRE)"
+        elif self._smoke_emergency_detected:
+            h_stat = "🌫️ DARURAT ASAP TEBAL"
+        elif has_fallen:
+            h_stat = "⚠️ MAN DOWN / JATUH"
+        else:
+            h_stat = "NORMAL"
+
         self._set_status(
             camera_name=cam_name,
             connected=True,
@@ -1354,7 +1496,12 @@ class PersonMonitor:
             vest_missing=sum(track["vest"] == "MISSING" for track in self._tracks.values()),
             fall_detected=has_fallen,
             smoking_detected=has_smoking,
-            health_status="⚠️ MAN DOWN / JATUH" if has_fallen else "NORMAL",
+            fire_detected=self._fire_detected,
+            smoke_emergency_detected=self._smoke_emergency_detected,
+            fire_count=fire_cnt,
+            smoke_count=smoke_cnt,
+            fire_detections=self._latest_fire,
+            health_status=h_stat,
             updated_at=datetime.now(timezone.utc).isoformat(),
             tracks=tracks,
         )
@@ -1365,20 +1512,27 @@ class PersonMonitor:
 
         # Check & dispatch WhatsApp snapshots
         latest_snap_path = None
-        if annotated is not None and len(tracks) > 0:
+        if annotated is not None:
             if notifier.settings.get("whatsapp_enabled") and notifier.settings.get("whatsapp_target"):
-                has_any_alert_trigger = any(
+                has_any_person_alert = any(
                     (t["stay_seconds"] >= notifier.settings.get("alert_ppe_violation_seconds", 60) and (t["helmet"] == "MISSING" or t["vest"] == "MISSING"))
                     or (t["posture"] == "FALLEN" and t["lying_seconds"] >= 4)
                     or (t["stay_seconds"] >= notifier.settings.get("alert_er_activity_seconds", 300))
                     or t.get("is_smoking")
                     for t in tracks
                 )
-                if has_any_alert_trigger:
+                has_env_emergency = self._fire_detected or self._smoke_emergency_detected
+                if has_any_person_alert or has_env_emergency:
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                     snap_file = self.settings.snapshots_dir / f"wa_alert_{timestamp}.jpg"
                     cv2.imwrite(str(snap_file), annotated, [cv2.IMWRITE_JPEG_QUALITY, 85])
                     latest_snap_path = snap_file
+
+                    # Dispatch fire & smoke emergency alerts immediately
+                    if self._fire_detected:
+                        notifier.notify_fire_emergency(cam_name, image_path=latest_snap_path)
+                    if self._smoke_emergency_detected:
+                        notifier.notify_smoke_emergency(cam_name, image_path=latest_snap_path)
 
         notifier.process_tracks_and_alerts(tracks, latest_snapshot_path=latest_snap_path)
 
@@ -1395,6 +1549,24 @@ class PersonMonitor:
         font_thick = max(2, int(scale * 1.5))
         box_thickness = max(2, int(scale * 2.0))
 
+        # 1. Annotate Fire and Smoke Detections
+        for f_det in getattr(self, "_latest_fire", []):
+            bx, by, bw, bh = f_det["box"]
+            f_lbl = f_det["label"]
+            f_conf = f_det["confidence"]
+            if f_lbl == "fire":
+                f_color = (0, 69, 255)  # Bright Orange-Red
+                f_text = f"🔥 FIRE ({int(f_conf * 100)}%)"
+            else:
+                f_color = (180, 180, 100)  # Dense smoke teal-gray
+                f_text = f"🌫️ DENSE SMOKE ({int(f_conf * 100)}%)"
+
+            cv2.rectangle(output, (bx, by), (bx + bw, by + bh), f_color, box_thickness + 2)
+            (tw, th), _ = cv2.getTextSize(f_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thick)
+            cv2.rectangle(output, (bx, max(0, by - th - int(10 * scale))), (min(output.shape[1], bx + tw + int(12 * scale)), by), f_color, -1)
+            cv2.putText(output, f_text, (bx + int(6 * scale), by - int(5 * scale)), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), font_thick, cv2.LINE_AA)
+
+        # 2. Annotate People & PPE
         for track in self._tracks.values():
             x, y, w, h = track["box"]
             is_fallen = track.get("posture") == "FALLEN"
@@ -1471,7 +1643,30 @@ class PersonMonitor:
         top_font_thick = max(2, int(scale * 2.2))
         top_y = int(40 * scale)
 
-        if has_fallen_global:
+        # 3. Prominent Top Header Banner
+        if getattr(self, "_fire_detected", False):
+            cv2.putText(
+                output,
+                "🚨🚨 BAHAYA KEBAKARAN: API TERDETEKSI DI RUANG ELEKTRIKAL! 🚨🚨",
+                (int(20 * scale), top_y),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                top_font_scale,
+                (0, 0, 255),
+                top_font_thick + 1,
+                cv2.LINE_AA,
+            )
+        elif getattr(self, "_smoke_emergency_detected", False):
+            cv2.putText(
+                output,
+                "⚠️🚨 PERINGATAN K3: DETEKSI ASAP TEBAL DI RUANG ELEKTRIKAL!",
+                (int(20 * scale), top_y),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                top_font_scale,
+                (0, 140, 255),
+                top_font_thick,
+                cv2.LINE_AA,
+            )
+        elif has_fallen_global:
             cv2.putText(
                 output,
                 "⚠️ PERINGATAN DARURAT: PERSONEL JATUH / PINGSAN!",

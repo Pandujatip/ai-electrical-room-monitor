@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="id">
 <head>
   <meta charset="utf-8">
@@ -116,6 +116,7 @@
         <div><span>Safety vest</span><strong id="vest">-</strong></div>
         <div><span>Kondisi Fisik / Fall Alert</span><strong id="healthStatus" class="green">NORMAL</strong></div>
         <div><span>Aktivitas Merokok</span><strong id="smokingStatus" class="green">AMAN</strong></div>
+        <div><span>Deteksi Api & Asap Tebal</span><strong id="fireSmokeStatus" class="green">AMAN</strong></div>
         <div><span>Voice Alarm (30s)</span><span style="display: flex; align-items: center; gap: 8px;"><strong id="voiceAlarm" class="green">AKTIF</strong><button id="btnTestVoice" type="button" style="padding: 3px 8px; font-size: 0.75rem; background: #e0f2fe; border: 1px solid #bae6fd; border-radius: 4px; cursor: pointer; color: #0284c7; font-weight: 600;">🔊 Tes Suara</button></span></div>
         <div><span>Waktu inferensi</span><strong id="latency">-</strong></div>
       </div>
@@ -247,6 +248,17 @@
             </div>
             <label class="switch">
               <input type="checkbox" id="toggleWaSmoking" checked>
+              <span class="slider round"></span>
+            </label>
+          </div>
+
+          <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 12px; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <strong style="display: block; font-size: 0.9rem; color: #991b1b;">🚨 WhatsApp Alert: Deteksi Api & Asap Tebal (Darurat)</strong>
+              <span style="font-size: 0.78rem; color: #b91c1c;">Kirim foto seketika jika terdeteksi kobaran api atau asap kebakaran</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="toggleWaFire" checked>
               <span class="slider round"></span>
             </label>
           </div>
