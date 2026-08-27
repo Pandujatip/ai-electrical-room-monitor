@@ -426,7 +426,13 @@ def analyze_smoking_gesture(
     face_box: tuple[int, int, int, int] | None = None,
     frame: np.ndarray | None = None,
 ) -> tuple[bool, float | None]:
-    """Analyze hand-to-mouth smoking action with strict kinematic validation.
+    """Analyze hand-to-mouth smoking action with strict kinematic validation
+    and supplementary visual cues (smoke, ember, stick).
+
+    Detection logic:
+      - Gesture alone (hand at mouth) → smoking detected
+      - Gesture + visual cues (smoke/ember) → smoking detected (higher confidence)
+      - Visual cues alone WITHOUT gesture → NOT detected (prevents false alarm)
 
     Returns:
         (is_smoking, normalized_distance)
@@ -482,7 +488,7 @@ def analyze_smoking_gesture(
             if w_idx not in valid_kps:
                 continue
             wx, wy = valid_kps[w_idx]
-            
+
             d_wrist = float(np.hypot(wx - mouth_x, wy - mouth_y))
             norm_wrist = d_wrist / h_span
             if norm_wrist < min_norm_dist:
@@ -511,12 +517,115 @@ def analyze_smoking_gesture(
             if is_gesture_smoking:
                 break
 
-        dist_val = float(min_norm_dist) if min_norm_dist < 900.0 else None
-        return is_gesture_smoking, dist_val
+    # 3. Visual Analysis: Smoke, Ember, Stick (supplementary signals)
+    has_smoke = False
+    has_ember = False
+    has_stick = False
 
-    # 3. If NO keypoints at all (pure face detection fallback)
-    # Require hand presence in front of mouth with glowing hotspot
-    return False, None
+    if frame is not None:
+        fh_img, fw_img = frame.shape[:2]
+
+        # --- A. Smoke Detection (area ABOVE mouth/nose, rising upward) ---
+        # Smoke is light gray/white, low saturation, rises above head
+        smoke_y1 = max(0, int(mouth_y - h_span * 1.80))  # well above head
+        smoke_y2 = max(0, int(mouth_y - h_span * 0.20))   # just above nose
+        smoke_x1 = max(0, int(mouth_x - h_span * 0.80))
+        smoke_x2 = min(fw_img, int(mouth_x + h_span * 0.80))
+
+        if smoke_y2 > smoke_y1 + 5 and smoke_x2 > smoke_x1 + 5:
+            smoke_roi = frame[smoke_y1:smoke_y2, smoke_x1:smoke_x2]
+            hsv_smoke = cv2.cvtColor(smoke_roi, cv2.COLOR_BGR2HSV)
+
+            # Smoke characteristics: low saturation (< 60), medium-high value (120-240)
+            # This captures the gray/white translucent haze of cigarette smoke
+            mask_smoke = cv2.inRange(
+                hsv_smoke,
+                np.array([0, 0, 120]),    # any hue, very low sat, medium+ brightness
+                np.array([180, 60, 240]),  # any hue, low sat, high brightness
+            )
+
+            # Apply morphological operations to filter noise
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+            mask_smoke = cv2.morphologyEx(mask_smoke, cv2.MORPH_OPEN, kernel)
+
+            smoke_px = cv2.countNonZero(mask_smoke)
+            roi_area = smoke_roi.shape[0] * smoke_roi.shape[1]
+
+            # Smoke typically covers 8-40% of the ROI above the head
+            # Below 8% is normal background; above 40% is likely a white wall
+            smoke_ratio = smoke_px / max(1, roi_area)
+            if 0.08 <= smoke_ratio <= 0.45 and smoke_px >= 80:
+                # Additional check: smoke has soft, blurry edges (low edge density)
+                gray_smoke = cv2.cvtColor(smoke_roi, cv2.COLOR_BGR2GRAY)
+                edges_smoke = cv2.Canny(gray_smoke, 50, 150)
+                edge_density = cv2.countNonZero(edges_smoke) / max(1, roi_area)
+                # Smoke has LOW edge density (< 0.15) because it's diffuse
+                if edge_density < 0.15:
+                    has_smoke = True
+
+        # --- B. Ember Detection (glowing red/orange tip near mouth) ---
+        ember_y1 = max(0, int(mouth_y - h_span * 0.40))
+        ember_y2 = min(fh_img, int(mouth_y + h_span * 0.60))
+        ember_x1 = max(0, int(mouth_x - h_span * 0.80))
+        ember_x2 = min(fw_img, int(mouth_x + h_span * 0.80))
+
+        if ember_y2 > ember_y1 + 5 and ember_x2 > ember_x1 + 5:
+            ember_roi = frame[ember_y1:ember_y2, ember_x1:ember_x2]
+            hsv_ember = cv2.cvtColor(ember_roi, cv2.COLOR_BGR2HSV)
+
+            # Ember: bright red/orange glow (H: 0-18 or 165-180, S > 80, V > 180)
+            # Tighter thresholds than before to avoid skin/lip false positives
+            mask_ember = cv2.bitwise_or(
+                cv2.inRange(hsv_ember, np.array([0, 80, 180]), np.array([18, 255, 255])),
+                cv2.inRange(hsv_ember, np.array([165, 80, 180]), np.array([180, 255, 255])),
+            )
+            ember_px = cv2.countNonZero(mask_ember)
+            if ember_px >= 15:
+                has_ember = True
+
+        # --- C. Stick Detection (thin white rod near mouth) ---
+        stick_y1 = max(0, int(mouth_y - h_span * 0.30))
+        stick_y2 = min(fh_img, int(mouth_y + h_span * 0.50))
+        stick_x1 = max(0, int(mouth_x - h_span * 0.70))
+        stick_x2 = min(fw_img, int(mouth_x + h_span * 0.70))
+
+        if stick_y2 > stick_y1 + 5 and stick_x2 > stick_x1 + 5:
+            stick_roi = frame[stick_y1:stick_y2, stick_x1:stick_x2]
+            gray_stick = cv2.cvtColor(stick_roi, cv2.COLOR_BGR2GRAY)
+            _, mask_white = cv2.threshold(gray_stick, 180, 255, cv2.THRESH_BINARY)
+
+            # Find thin elongated contours (cigarette stick shape)
+            contours, _ = cv2.findContours(mask_white, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            for cnt in contours:
+                area = cv2.contourArea(cnt)
+                if area < 10:
+                    continue
+                rect = cv2.minAreaRect(cnt)
+                w_rect, h_rect = rect[1]
+                if min(w_rect, h_rect) < 1:
+                    continue
+                aspect = max(w_rect, h_rect) / min(w_rect, h_rect)
+                if aspect >= 3.0 and area <= 800:  # thin elongated shape
+                    has_stick = True
+                    break
+
+    # 4. Final Decision
+    #    - Gesture is the PRIMARY trigger (mandatory)
+    #    - Visual cues (smoke/ember/stick) are SUPPLEMENTARY boosters
+    #    - Visual cues alone do NOT trigger smoking (prevents false alarms)
+    dist_val = float(min_norm_dist) if min_norm_dist < 900.0 else None
+
+    if is_gesture_smoking:
+        return True, dist_val
+
+    # If gesture is borderline (hand near but not quite at mouth), visual cues can push it over
+    if valid_kps and min_norm_dist <= 1.60:
+        visual_count = sum([has_smoke, has_ember, has_stick])
+        # Need at least 2 visual cues AND hand reasonably close
+        if visual_count >= 2 and min_norm_dist <= 1.40:
+            return True, dist_val
+
+    return False, dist_val
 
 
 class PersonMonitor:
