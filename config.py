@@ -39,7 +39,7 @@ class Settings:
     event_cooldown_seconds: float = max(0, _float("EVENT_COOLDOWN_SECONDS", 30))
     frame_interval_seconds: float = max(0.02, _float("FRAME_INTERVAL_SECONDS", 0.15))
     detector_mode: str = os.getenv("DETECTOR_MODE", "ultralytics")
-    yolo_model: str = os.getenv("YOLO_MODEL", str(BASE_DIR / "yolo11s.pt"))
+    yolo_model: str = os.getenv("YOLO_MODEL", str(BASE_DIR / "yolo11n.pt" if (BASE_DIR / "yolo11n.pt").exists() else BASE_DIR / "yolo11s.pt"))
     yolo_confidence: float = max(0.05, _float("YOLO_CONFIDENCE", 0.25))
     yolo_iou: float = min(0.95, max(0.05, _float("YOLO_IOU", 0.50)))
     yolo_imgsz: int = max(320, _int("YOLO_IMGSZ", 640))

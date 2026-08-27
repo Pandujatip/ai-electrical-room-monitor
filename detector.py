@@ -829,42 +829,31 @@ class PersonMonitor:
                 daemon=True,
             )
             reader.start()
+
+            ai_stop = threading.Event()
+            ai_thread = threading.Thread(
+                target=self._ai_inference_worker,
+                args=(ai_stop,),
+                name="imou-ai-worker",
+                daemon=True,
+            )
+            ai_thread.start()
+
             try:
-                last_seq = -1
+                last_render_seq = -1
                 while not self._stop.is_set():
                     with self._frame_lock:
                         seq = self._frame_seq
                         frame = self._latest_frame.copy() if self._latest_frame is not None else None
-                    if frame is None or seq == last_seq:
+                    if frame is None or seq == last_render_seq:
                         if not reader.is_alive() and reader_error[0] is not None:
                             raise reader_error[0]
-                        self._stop.wait(0.01)
+                        self._stop.wait(0.005)
                         continue
-                    last_seq = seq
+                    last_render_seq = seq
                     if self.settings.rotate_180:
                         frame = cv2.rotate(frame, cv2.ROTATE_180)
                     self._frame_number += 1
-                    if self._frame_number % self.settings.person_process_interval == 0:
-                        started = time.perf_counter()
-                        people = self._detect_and_track_people(frame)
-                        self._person_inference_count += 1
-                        if (
-                            self._ppe_model is not None
-                            and self._person_inference_count % self.settings.ppe_process_interval == 0
-                        ):
-                            self._latest_ppe = self._detect_ppe(frame)
-                            self._latest_ppe_frame = self._frame_number
-                        if (
-                            getattr(self, "_fire_model", None) is not None
-                            and self._person_inference_count % getattr(self.settings, "fire_process_interval", 2) == 0
-                        ):
-                            self._latest_fire = self._detect_fire_and_smoke(frame)
-                            self._update_fire_states(self._latest_fire, frame=frame)
-                        self._update_tracks(people, frame=frame)
-                        self._update_ppe_states()
-                        self._process_auto_tracking(frame.shape)
-                        inference_ms = int((time.perf_counter() - started) * 1000)
-                        self._set_status(inference_ms=inference_ms)
                     annotated = self._annotate(frame)
                     jpeg = self._encode_preview(annotated)
                     with self._lock:
@@ -875,11 +864,63 @@ class PersonMonitor:
                 self._set_status(connected=False, last_error=str(exc))
                 notifier.notify_camera_status(connected=False, room_name=cam_name, error_msg=str(exc))
             finally:
+                ai_stop.set()
+                ai_thread.join(timeout=2)
                 reader_stop.set()
                 reader.join(timeout=2)
                 capture.release()
                 self._tracks.clear()
             self._stop.wait(3)
+
+    def _ai_inference_worker(
+        self,
+        stop_event: threading.Event,
+    ) -> None:
+        last_seq = -1
+        while not self._stop.is_set() and not stop_event.is_set():
+            with self._frame_lock:
+                seq = self._frame_seq
+                frame = self._latest_frame.copy() if self._latest_frame is not None else None
+
+            if frame is None or seq == last_seq:
+                stop_event.wait(0.01)
+                continue
+            last_seq = seq
+            if self.settings.rotate_180:
+                frame = cv2.rotate(frame, cv2.ROTATE_180)
+
+            try:
+                started = time.perf_counter()
+                self._person_inference_count += 1
+
+                # 1. Detect & Track People
+                people = self._detect_and_track_people(frame)
+
+                # 2. PPE Detection
+                if (
+                    self._ppe_model is not None
+                    and self._person_inference_count % self.settings.ppe_process_interval == 0
+                ):
+                    self._latest_ppe = self._detect_ppe(frame)
+                    self._latest_ppe_frame = self._frame_number
+
+                # 3. Fire & Smoke Detection
+                if (
+                    getattr(self, "_fire_model", None) is not None
+                    and self._person_inference_count % getattr(self.settings, "fire_process_interval", 2) == 0
+                ):
+                    self._latest_fire = self._detect_fire_and_smoke(frame)
+                    self._update_fire_states(self._latest_fire, frame=frame)
+
+                # 4. Update track states
+                self._update_tracks(people, frame=frame)
+                self._update_ppe_states()
+                self._process_auto_tracking(frame.shape)
+
+                inference_ms = int((time.perf_counter() - started) * 1000)
+                self._set_status(inference_ms=inference_ms)
+            except Exception as exc:
+                logger.error("AI inference worker error: %s", exc)
 
     def _process_auto_tracking(self, frame_shape: tuple[int, ...]) -> None:
         """Closed-loop AI Auto-Tracking for PTZ camera following persons."""
