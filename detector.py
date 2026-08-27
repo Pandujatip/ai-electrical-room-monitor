@@ -496,26 +496,71 @@ def analyze_smoking_gesture(
         if is_gesture_smoking:
             break
 
-    # 2. Vision analysis for cigarette stick / line contours near mouth
-    is_vision_smoking = False
+    # 2. Advanced Vision Analysis for Cigarette Stick & Glowing Ember (Rokok Batang)
+    has_ember = False
+    has_stick = False
+    has_smoke = False
+
     if frame is not None:
         fh, fw = frame.shape[:2]
-        y1 = max(0, int(mouth_y - h_span * 0.30))
-        y2 = min(fh, int(mouth_y + h_span * 0.40))
-        x1 = max(0, int(mouth_x - h_span * 0.50))
-        x2 = min(fw, int(mouth_x + h_span * 0.50))
-        if y2 > y1 and x2 > x1:
-            mouth_roi = frame[y1:y2, x1:x2]
-            gray = cv2.cvtColor(mouth_roi, cv2.COLOR_BGR2GRAY)
-            edges = cv2.Canny(gray, 50, 150)
-            lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=15, minLineLength=10, maxLineGap=4)
-            line_count = len(lines) if lines is not None else 0
-            bgr_max = mouth_roi.max(axis=(0,1))
-            has_bright = bool(bgr_max[0] >= 190 and bgr_max[1] >= 220 and bgr_max[2] >= 220)
-            if has_bright and line_count >= 3:
-                is_vision_smoking = True
+        # Focus on Mouth & Finger Interaction Zone
+        y1 = max(0, int(mouth_y - h_span * 0.40))
+        y2 = min(fh, int(mouth_y + h_span * 0.60))
+        x1 = max(0, int(mouth_x - h_span * 0.65))
+        x2 = min(fw, int(mouth_x + h_span * 0.65))
 
-    final_smoking = is_gesture_smoking or (is_vision_smoking and min_norm_dist <= 1.2)
+        if y2 > y1 + 5 and x2 > x1 + 5:
+            mouth_roi = frame[y1:y2, x1:x2]
+
+            # A. Deteksi Bara Api Rokok (Glowing Red/Orange Ember Hotspot)
+            hsv = cv2.cvtColor(mouth_roi, cv2.COLOR_BGR2HSV)
+            mask_red1 = cv2.inRange(hsv, np.array([0, 90, 160]), np.array([12, 255, 255]))
+            mask_red2 = cv2.inRange(hsv, np.array([165, 90, 160]), np.array([180, 255, 255]))
+            mask_orange = cv2.inRange(hsv, np.array([13, 110, 170]), np.array([28, 255, 255]))
+            mask_ember = cv2.bitwise_or(mask_red1, cv2.bitwise_or(mask_red2, mask_orange))
+
+            contours, _ = cv2.findContours(mask_ember, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            for cnt in contours:
+                area = cv2.contourArea(cnt)
+                if 2.0 <= area <= 120.0:  # Compact cigarette ember spot
+                    has_ember = True
+                    break
+
+            # B. Deteksi Batang Rokok Putih/Silindris (Cigarette Stick)
+            gray = cv2.cvtColor(mouth_roi, cv2.COLOR_BGR2GRAY)
+            # High-contrast bright mask for white cigarette body
+            _, mask_white = cv2.threshold(gray, 185, 255, cv2.THRESH_BINARY)
+            stick_cnts, _ = cv2.findContours(mask_white, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            for cnt in stick_cnts:
+                if len(cnt) >= 5:
+                    rect = cv2.minAreaRect(cnt)
+                    rw, rh = rect[1]
+                    if min(rw, rh) > 0:
+                        elongation = max(rw, rh) / min(rw, rh)
+                        # Elongated narrow stick geometry
+                        if 2.2 <= elongation <= 12.0 and 15.0 <= max(rw, rh) <= h_span * 1.2:
+                            has_stick = True
+                            break
+
+            # C. Deteksi Asap Tipis Membumbung (Wispy Smoke Texture Blur)
+            edges = cv2.Canny(gray, 40, 120)
+            lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=12, minLineLength=8, maxLineGap=3)
+            if lines is not None and len(lines) >= 2 and has_ember:
+                has_smoke = True
+
+    # Final Decision focused on Conventional Cigarette Stick (Rokok Batang):
+    # Triggered by: Hand-to-mouth gesture OR presence of glowing ember near mouth OR cigarette stick near mouth
+    if is_gesture_smoking:
+        final_smoking = True
+    elif has_ember and min_norm_dist <= 1.3:
+        final_smoking = True
+    elif has_stick and has_ember:
+        final_smoking = True
+    elif has_stick and min_norm_dist <= 1.0:
+        final_smoking = True
+    else:
+        final_smoking = False
+
     dist_val = float(min_norm_dist) if min_norm_dist < 900.0 else None
     return final_smoking, dist_val
 
