@@ -69,7 +69,16 @@
               <span>Kecepatan Putar:</span>
               <strong id="ptzSpeedLabel" style="color: #38bdf8;">5</strong>
             </div>
-            <input type="range" id="ptzSpeed" min="1" max="8" value="5">
+          <!-- Auto Tracking Switch -->
+          <div style="background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 10px 12px; margin-top: 10px; width: 100%; box-sizing: border-box; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <strong style="display: block; font-size: 0.84rem; color: #f8fafc;">🎯 Auto-Tracking AI</strong>
+              <span style="font-size: 0.72rem; color: #94a3b8;">Kamera otomatis ikuti pergerakan orang</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="toggleAutoTracking">
+              <span class="slider round"></span>
+            </label>
           </div>
 
           <div id="ptzStatusMsg" style="font-size: 0.76rem; margin-top: 8px; color: #94a3b8; text-align: center; min-height: 16px;"></div>

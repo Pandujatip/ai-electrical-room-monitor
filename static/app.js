@@ -275,6 +275,8 @@ async function loadSettings() {
     if (toggleWaOverstay) toggleWaOverstay.checked = data.alert_er_activity_enabled !== false;
     const toggleWaCameraOffline = document.getElementById("toggleWaCameraOffline");
     if (toggleWaCameraOffline) toggleWaCameraOffline.checked = data.alert_camera_offline_enabled !== false;
+    const toggleAutoTracking = document.getElementById("toggleAutoTracking");
+    if (toggleAutoTracking) toggleAutoTracking.checked = data.auto_tracking_enabled === true;
     const cooldownSelect = document.getElementById("cooldownSelect");
     if (cooldownSelect && data.alert_cooldown_seconds) {
       cooldownSelect.value = String(data.alert_cooldown_seconds);
@@ -348,6 +350,12 @@ const toggleWaCameraOffline = document.getElementById("toggleWaCameraOffline");
 if (toggleWaCameraOffline) {
   toggleWaCameraOffline.addEventListener("change", () => {
     saveSettings({ alert_camera_offline_enabled: toggleWaCameraOffline.checked });
+  });
+}
+const toggleAutoTracking = document.getElementById("toggleAutoTracking");
+if (toggleAutoTracking) {
+  toggleAutoTracking.addEventListener("change", () => {
+    saveSettings({ auto_tracking_enabled: toggleAutoTracking.checked });
   });
 }
 

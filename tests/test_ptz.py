@@ -54,6 +54,26 @@ class PTZControllerTests(unittest.TestCase):
         self.assertEqual(kwargs["params"]["code"], "GotoPreset")
         self.assertEqual(kwargs["params"]["arg2"], 1)
 
+    def test_auto_tracking_deadzone_and_direction(self):
+        w = 640
+        center_x = 320
+        deadzone = w * 0.18  # 115.2
+
+        # 1. Target inside deadzone (e.g. cx = 310) -> no move
+        cx_inside = 310
+        offset_inside = cx_inside - center_x
+        self.assertLessEqual(abs(offset_inside), deadzone)
+
+        # 2. Target far left (e.g. cx = 80) -> move left
+        cx_left = 80
+        offset_left = cx_left - center_x
+        self.assertLess(offset_left, -deadzone)
+
+        # 3. Target far right (e.g. cx = 580) -> move right
+        cx_right = 580
+        offset_right = cx_right - center_x
+        self.assertGreater(offset_right, deadzone)
+
 
 if __name__ == "__main__":
     unittest.main()

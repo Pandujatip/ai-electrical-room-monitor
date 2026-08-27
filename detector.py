@@ -19,6 +19,7 @@ from audio import VoiceAlarm
 from config import Settings
 from faces import FaceManager
 from notifier import notifier
+from ptz import PTZController
 from storage import EventStore
 
 
@@ -567,6 +568,11 @@ class PersonMonitor:
         self._last_ppe_event_status: str | None = None
         self._last_ppe_event_time = 0.0
         self._pending_ppe_event: tuple[str, str, float] | None = None
+        self.ptz = PTZController(self.settings.rtsp_url)
+        self._auto_track_locked_id: int | None = None
+        self._auto_track_last_seen: float = 0.0
+        self._last_auto_track_time: float = 0.0
+        self._last_auto_track_dir: str = "stop"
 
     def _load_models(self) -> None:
         if YOLO is None:
@@ -704,6 +710,7 @@ class PersonMonitor:
                             self._latest_ppe_frame = self._frame_number
                         self._update_tracks(people, frame=frame)
                         self._update_ppe_states()
+                        self._process_auto_tracking(frame.shape)
                         inference_ms = int((time.perf_counter() - started) * 1000)
                         self._set_status(inference_ms=inference_ms)
                     annotated = self._annotate(frame)
@@ -721,6 +728,72 @@ class PersonMonitor:
                 capture.release()
                 self._tracks.clear()
             self._stop.wait(3)
+
+    def _process_auto_tracking(self, frame_shape: tuple[int, ...]) -> None:
+        """Closed-loop AI Auto-Tracking for PTZ camera following persons."""
+        if not notifier.settings.get("auto_tracking_enabled", False):
+            return
+
+        now = time.time()
+        # Rate limit PTZ updates to at most once every 0.25s
+        if now - self._last_auto_track_time < 0.25:
+            return
+
+        h, w = frame_shape[:2]
+        center_x = w / 2.0
+        deadzone = w * 0.18  # ±18% of screen center
+
+        active_tracks = [t for t in self._tracks.values() if not t.get("lost", False)]
+
+        if not active_tracks:
+            if self._auto_track_locked_id is not None:
+                self._auto_track_locked_id = None
+                self._auto_track_last_seen = now
+                if self._last_auto_track_dir != "stop":
+                    self.ptz.move("stop")
+                    self._last_auto_track_dir = "stop"
+                    self._last_auto_track_time = now
+            elif notifier.settings.get("auto_tracking_return_home", True):
+                if self._auto_track_last_seen > 0 and (now - self._auto_track_last_seen) > 15.0:
+                    self.ptz.goto_preset(1)
+                    self._auto_track_last_seen = 0.0
+            return
+
+        self._auto_track_last_seen = now
+
+        # Maintain target lock on primary person or pick first active track
+        primary = None
+        if self._auto_track_locked_id is not None:
+            primary = next((t for t in active_tracks if t.get("id") == self._auto_track_locked_id), None)
+
+        if primary is None:
+            primary = active_tracks[0]
+            self._auto_track_locked_id = primary.get("id")
+
+        box = primary.get("box", [0, 0, 0, 0])
+        x1, y1, x2, y2 = box
+        target_cx = (x1 + x2) / 2.0
+
+        offset_x = target_cx - center_x
+        speed = int(notifier.settings.get("auto_tracking_speed", 4))
+
+        if abs(offset_x) <= deadzone:
+            if self._last_auto_track_dir != "stop":
+                self.ptz.move("stop")
+                self._last_auto_track_dir = "stop"
+                self._last_auto_track_time = now
+        elif offset_x < -deadzone:
+            # Person is on the left -> Pan Left
+            if self._last_auto_track_dir != "left":
+                self.ptz.move("left", speed=speed)
+                self._last_auto_track_dir = "left"
+                self._last_auto_track_time = now
+        elif offset_x > deadzone:
+            # Person is on the right -> Pan Right
+            if self._last_auto_track_dir != "right":
+                self.ptz.move("right", speed=speed)
+                self._last_auto_track_dir = "right"
+                self._last_auto_track_time = now
 
     def _read_latest_frames(
         self,
