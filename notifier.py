@@ -23,14 +23,19 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "whatsapp_enabled": True,
     "whatsapp_target": "",  # e.g. "6281234567890" or "120363xxx@g.us"
     "voice_alarm_enabled": True,
+    "voice_alarm_trigger_seconds": 30,
     "alert_ppe_violation_enabled": True,
     "alert_ppe_violation_seconds": 60,  # 1 menit
     "alert_fall_emergency_enabled": True,
+    "alert_fall_emergency_seconds": 4,  # 4 detik
+    "alert_smoking_enabled": True,
+    "alert_smoking_seconds": 2.5,  # 2.5 detik
+    "alert_fire_emergency_enabled": True,
+    "alert_fire_emergency_seconds": 1.0,  # 1 detik
+    "alert_smoke_emergency_enabled": True,
+    "alert_smoke_emergency_seconds": 1.5,  # 1.5 detik
     "alert_er_activity_enabled": True,
     "alert_er_activity_seconds": 300,  # 5 menit
-    "alert_smoking_enabled": True,
-    "alert_fire_emergency_enabled": True,
-    "alert_smoke_emergency_enabled": True,
     "alert_camera_offline_enabled": True,
     "alert_cooldown_seconds": 3600,  # 1 jam (3600s) per orang agar tidak spam
     "auto_tracking_enabled": False,
@@ -258,7 +263,8 @@ class NotificationManager:
 
             # Rule 2: Unconscious / Fall Emergency
             if self.settings.get("alert_fall_emergency_enabled", True):
-                if posture == "FALLEN" and lying_sec >= 4:
+                fall_threshold = int(self.settings.get("alert_fall_emergency_seconds", 4))
+                if posture == "FALLEN" and lying_sec >= fall_threshold:
                     self.dispatch_alert(
                         alert_key=f"fall_emergency_{person_key}",
                         title="🚨 DARURAT K3: PERSONEL JATUH / PINGSAN!",
@@ -291,7 +297,8 @@ class NotificationManager:
 
             # Rule 4: Smoking Detection Alert
             if self.settings.get("alert_smoking_enabled", True):
-                if track.get("is_smoking"):
+                smoking_threshold = float(self.settings.get("alert_smoking_seconds", 2.5))
+                if track.get("is_smoking") and track.get("smoking_seconds", 0) >= smoking_threshold:
                     self.dispatch_alert(
                         alert_key=f"smoking_{person_key}",
                         title="🔥 PERINGATAN K3: DETEKSI AKTIVITAS MEROKOK!",

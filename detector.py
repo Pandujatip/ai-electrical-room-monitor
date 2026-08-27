@@ -1189,11 +1189,12 @@ class PersonMonitor:
         has_smoke = any(d["label"] == "smoke" for d in fire_detections)
 
         # 1. Fire Evaluation
+        fire_threshold = float(self.settings.fire_debounce_seconds if getattr(self.settings, "fire_debounce_seconds", 1.0) != 1.0 else notifier.settings.get("alert_fire_emergency_seconds", 1.0))
         if has_fire:
             if self._fire_first_seen is None:
                 self._fire_first_seen = now
             fire_dur = now - self._fire_first_seen
-            if fire_dur >= self.settings.fire_debounce_seconds:
+            if fire_dur >= fire_threshold:
                 self._fire_detected = True
                 if not self._fire_alert_triggered:
                     self._fire_alert_triggered = True
@@ -1218,11 +1219,12 @@ class PersonMonitor:
                 self._fire_alert_triggered = False
 
         # 2. Dense Smoke Evaluation
+        smoke_threshold = float(self.settings.smoke_emergency_debounce_seconds if getattr(self.settings, "smoke_emergency_debounce_seconds", 1.5) != 1.5 else notifier.settings.get("alert_smoke_emergency_seconds", 1.5))
         if has_smoke:
             if self._smoke_first_seen is None:
                 self._smoke_first_seen = now
             smoke_dur = now - self._smoke_first_seen
-            if smoke_dur >= self.settings.smoke_emergency_debounce_seconds:
+            if smoke_dur >= smoke_threshold:
                 self._smoke_emergency_detected = True
                 if not self._smoke_alert_triggered:
                     self._smoke_alert_triggered = True
@@ -1317,7 +1319,8 @@ class PersonMonitor:
                 if track.get("lying_start_time") is None:
                     track["lying_start_time"] = now
                 lying_duration = now - track["lying_start_time"]
-                if lying_duration >= self.settings.fall_debounce_seconds:
+                fall_threshold = float(notifier.settings.get("alert_fall_emergency_seconds", self.settings.fall_debounce_seconds))
+                if lying_duration >= fall_threshold:
                     track["posture"] = "FALLEN"
                     if not track.get("fall_alert_triggered"):
                         track["fall_alert_triggered"] = True
@@ -1343,11 +1346,12 @@ class PersonMonitor:
                     face_box=face_box,
                     frame=frame,
                 )
+                smoking_threshold = float(notifier.settings.get("alert_smoking_seconds", getattr(self.settings, "smoking_debounce_seconds", 2.5)))
                 if hand_near_mouth:
                     if not track.get("smoking_start_time"):
                         track["smoking_start_time"] = now
                     smoking_duration = now - track["smoking_start_time"]
-                    if smoking_duration >= getattr(self.settings, "smoking_debounce_seconds", 1.5):
+                    if smoking_duration >= smoking_threshold:
                         track["is_smoking"] = True
                         track["smoking_duration"] = int(smoking_duration)
                         if not track.get("smoking_alert_triggered"):

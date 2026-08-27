@@ -208,72 +208,149 @@
             </div>
           </div>
 
-          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; display: flex; justify-content: space-between; align-items: center;">
-            <div>
-              <strong style="display: block; font-size: 0.9rem; color: #1e293b;">🔊 Alarm Suara Peringatan (Voice)</strong>
-              <span style="font-size: 0.78rem; color: #64748b;">Suara: "Bapak ganteng, jangan lupa APD..."</span>
+          <!-- 1. Voice Alarm -->
+          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <strong style="display: block; font-size: 0.9rem; color: #1e293b;">🔊 Alarm Suara Peringatan (Voice)</strong>
+                <span style="font-size: 0.78rem; color: #64748b;">Suara pengingat APD otomatis jika belum patuh</span>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="toggleVoiceAlarm" checked>
+                <span class="slider round"></span>
+              </label>
             </div>
-            <label class="switch">
-              <input type="checkbox" id="toggleVoiceAlarm" checked>
-              <span class="slider round"></span>
-            </label>
+            <div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed #e2e8f0; display: flex; align-items: center; justify-content: space-between;">
+              <span style="font-size: 0.8rem; color: #64748b;">⏱️ Bunyi setelah tanpa APD:</span>
+              <select id="voiceTriggerSelect" style="padding: 4px 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.82rem; background: white;">
+                <option value="15">15 Detik</option>
+                <option value="30">30 Detik (Standar)</option>
+                <option value="45">45 Detik</option>
+                <option value="60">60 Detik (1 Menit)</option>
+              </select>
+            </div>
           </div>
 
-          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; display: flex; justify-content: space-between; align-items: center;">
-            <div>
-              <strong style="display: block; font-size: 0.9rem; color: #1e293b;">🦺 WhatsApp Alert: APD 1 Menit</strong>
-              <span style="font-size: 0.78rem; color: #64748b;">Kirim foto jika 60 detik tanpa Helm/Rompi</span>
+          <!-- 2. WhatsApp Alert: Pelanggaran APD -->
+          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <strong style="display: block; font-size: 0.9rem; color: #1e293b;">🦺 WhatsApp Alert: Pelanggaran APD</strong>
+                <span style="font-size: 0.78rem; color: #64748b;">Kirim foto jika personel tidak memakai Helm/Rompi</span>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="toggleWaPpe" checked>
+                <span class="slider round"></span>
+              </label>
             </div>
-            <label class="switch">
-              <input type="checkbox" id="toggleWaPpe" checked>
-              <span class="slider round"></span>
-            </label>
+            <div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed #e2e8f0; display: flex; align-items: center; justify-content: space-between;">
+              <span style="font-size: 0.8rem; color: #64748b;">⏱️ Kirim WA jika melanggar selama:</span>
+              <select id="ppeViolationSelect" style="padding: 4px 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.82rem; background: white;">
+                <option value="15">15 Detik</option>
+                <option value="30">30 Detik</option>
+                <option value="60">60 Detik (1 Menit - Standar)</option>
+                <option value="120">2 Menit (120 Detik)</option>
+                <option value="300">5 Menit (300 Detik)</option>
+              </select>
+            </div>
           </div>
 
-          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; display: flex; justify-content: space-between; align-items: center;">
-            <div>
-              <strong style="display: block; font-size: 0.9rem; color: #1e293b;">🆘 WhatsApp Alert: Orang Pingsan/Jatuh</strong>
-              <span style="font-size: 0.78rem; color: #64748b;">Kirim foto seketika saat posisi tergeletak</span>
+          <!-- 3. WhatsApp Alert: Orang Pingsan / Jatuh -->
+          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <strong style="display: block; font-size: 0.9rem; color: #1e293b;">🆘 WhatsApp Alert: Orang Pingsan/Jatuh</strong>
+                <span style="font-size: 0.78rem; color: #64748b;">Kirim foto seketika saat posisi tergeletak</span>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="toggleWaFall" checked>
+                <span class="slider round"></span>
+              </label>
             </div>
-            <label class="switch">
-              <input type="checkbox" id="toggleWaFall" checked>
-              <span class="slider round"></span>
-            </label>
+            <div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed #e2e8f0; display: flex; align-items: center; justify-content: space-between;">
+              <span style="font-size: 0.8rem; color: #64748b;">⏱️ Kirim WA jika tergeletak selama:</span>
+              <select id="fallEmergencySelect" style="padding: 4px 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.82rem; background: white;">
+                <option value="2">2 Detik (Instan)</option>
+                <option value="4">4 Detik (Standar Rekomendasi)</option>
+                <option value="6">6 Detik</option>
+                <option value="10">10 Detik</option>
+                <option value="15">15 Detik</option>
+              </select>
+            </div>
           </div>
 
-          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; display: flex; justify-content: space-between; align-items: center;">
-            <div>
-              <strong style="display: block; font-size: 0.9rem; color: #1e293b;">🔥 WhatsApp Alert: Deteksi Merokok</strong>
-              <span style="font-size: 0.78rem; color: #64748b;">Kirim foto seketika jika terdeteksi aktivitas merokok</span>
+          <!-- 4. WhatsApp Alert: Deteksi Merokok -->
+          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <strong style="display: block; font-size: 0.9rem; color: #1e293b;">🔥 WhatsApp Alert: Deteksi Merokok</strong>
+                <span style="font-size: 0.78rem; color: #64748b;">Kirim foto seketika jika terdeteksi aktivitas merokok</span>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="toggleWaSmoking" checked>
+                <span class="slider round"></span>
+              </label>
             </div>
-            <label class="switch">
-              <input type="checkbox" id="toggleWaSmoking" checked>
-              <span class="slider round"></span>
-            </label>
+            <div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed #e2e8f0; display: flex; align-items: center; justify-content: space-between;">
+              <span style="font-size: 0.8rem; color: #64748b;">⏱️ Kirim WA jika merokok selama:</span>
+              <select id="smokingAlertSelect" style="padding: 4px 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.82rem; background: white;">
+                <option value="1.5">1.5 Detik (Instan)</option>
+                <option value="2.5">2.5 Detik (Standar Rekomendasi)</option>
+                <option value="4.0">4.0 Detik</option>
+                <option value="6.0">6.0 Detik</option>
+              </select>
+            </div>
           </div>
 
-          <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 12px; display: flex; justify-content: space-between; align-items: center;">
-            <div>
-              <strong style="display: block; font-size: 0.9rem; color: #991b1b;">🚨 WhatsApp Alert: Deteksi Api & Asap Tebal (Darurat)</strong>
-              <span style="font-size: 0.78rem; color: #b91c1c;">Kirim foto seketika jika terdeteksi kobaran api atau asap kebakaran</span>
+          <!-- 5. WhatsApp Alert: Api & Asap Tebal (Darurat) -->
+          <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <strong style="display: block; font-size: 0.9rem; color: #991b1b;">🚨 WhatsApp Alert: Deteksi Api & Asap Tebal (Darurat)</strong>
+                <span style="font-size: 0.78rem; color: #b91c1c;">Kirim foto seketika jika terdeteksi api atau asap kebakaran</span>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="toggleWaFire" checked>
+                <span class="slider round"></span>
+              </label>
             </div>
-            <label class="switch">
-              <input type="checkbox" id="toggleWaFire" checked>
-              <span class="slider round"></span>
-            </label>
+            <div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed #fca5a5; display: flex; align-items: center; justify-content: space-between;">
+              <span style="font-size: 0.8rem; color: #991b1b;">⏱️ Kirim WA darurat jika api/asap bertahan:</span>
+              <select id="fireEmergencySelect" style="padding: 4px 8px; border: 1px solid #fca5a5; border-radius: 6px; font-size: 0.82rem; background: white;">
+                <option value="0.5">0.5 Detik (Instan Seketika)</option>
+                <option value="1.0">1.0 Detik (Standar Rekomendasi)</option>
+                <option value="2.0">2.0 Detik</option>
+                <option value="3.0">3.0 Detik</option>
+              </select>
+            </div>
           </div>
 
-          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; display: flex; justify-content: space-between; align-items: center;">
-            <div>
-              <strong style="display: block; font-size: 0.9rem; color: #1e293b;">⏱️ WhatsApp Alert: Aktivitas > 5 Menit</strong>
-              <span style="font-size: 0.78rem; color: #64748b;">Kirim foto jika beraktivitas lebih dari 300 detik</span>
+          <!-- 6. WhatsApp Alert: Aktivitas > 5 Menit (Overstay) -->
+          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <strong style="display: block; font-size: 0.9rem; color: #1e293b;">⏱️ WhatsApp Alert: Durasi Aktivitas Melebihi Batas</strong>
+                <span style="font-size: 0.78rem; color: #64748b;">Kirim foto jika personel berada di ruangan melebihi izin</span>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="toggleWaOverstay" checked>
+                <span class="slider round"></span>
+              </label>
             </div>
-            <label class="switch">
-              <input type="checkbox" id="toggleWaOverstay" checked>
-              <span class="slider round"></span>
-            </label>
+            <div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed #e2e8f0; display: flex; align-items: center; justify-content: space-between;">
+              <span style="font-size: 0.8rem; color: #64748b;">⏱️ Batas waktu durasi izin aktivitas:</span>
+              <select id="overstayAlertSelect" style="padding: 4px 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.82rem; background: white;">
+                <option value="60">1 Menit (60 Detik - Testing)</option>
+                <option value="180">3 Menit (180 Detik)</option>
+                <option value="300">5 Menit (300 Detik - Standar)</option>
+                <option value="600">10 Menit (600 Detik)</option>
+                <option value="900">15 Menit (900 Detik)</option>
+                <option value="1800">30 Menit (1800 Detik)</option>
+              </select>
+            </div>
           </div>
 
+          <!-- 7. WhatsApp Alert: Kamera CCTV Offline -->
           <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; display: flex; justify-content: space-between; align-items: center;">
             <div>
               <strong style="display: block; font-size: 0.9rem; color: #1e293b;">📹 WhatsApp Alert: Kamera CCTV Offline / Terputus</strong>

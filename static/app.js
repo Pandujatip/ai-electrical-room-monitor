@@ -295,6 +295,30 @@ async function loadSettings() {
     if (cooldownSelect && data.alert_cooldown_seconds) {
       cooldownSelect.value = String(data.alert_cooldown_seconds);
     }
+    const voiceTriggerSelect = document.getElementById("voiceTriggerSelect");
+    if (voiceTriggerSelect && data.voice_alarm_trigger_seconds) {
+      voiceTriggerSelect.value = String(data.voice_alarm_trigger_seconds);
+    }
+    const ppeViolationSelect = document.getElementById("ppeViolationSelect");
+    if (ppeViolationSelect && data.alert_ppe_violation_seconds) {
+      ppeViolationSelect.value = String(data.alert_ppe_violation_seconds);
+    }
+    const fallEmergencySelect = document.getElementById("fallEmergencySelect");
+    if (fallEmergencySelect && data.alert_fall_emergency_seconds) {
+      fallEmergencySelect.value = String(data.alert_fall_emergency_seconds);
+    }
+    const smokingAlertSelect = document.getElementById("smokingAlertSelect");
+    if (smokingAlertSelect && data.alert_smoking_seconds) {
+      smokingAlertSelect.value = String(data.alert_smoking_seconds);
+    }
+    const fireEmergencySelect = document.getElementById("fireEmergencySelect");
+    if (fireEmergencySelect && data.alert_fire_emergency_seconds) {
+      fireEmergencySelect.value = String(data.alert_fire_emergency_seconds);
+    }
+    const overstayAlertSelect = document.getElementById("overstayAlertSelect");
+    if (overstayAlertSelect && data.alert_er_activity_seconds) {
+      overstayAlertSelect.value = String(data.alert_er_activity_seconds);
+    }
   } catch (err) {}
 }
 
@@ -332,6 +356,52 @@ const cooldownSelectEl = document.getElementById("cooldownSelect");
 if (cooldownSelectEl) {
   cooldownSelectEl.addEventListener("change", () => {
     saveSettings({ alert_cooldown_seconds: parseInt(cooldownSelectEl.value, 10) });
+  });
+}
+
+const voiceTriggerSelect = document.getElementById("voiceTriggerSelect");
+if (voiceTriggerSelect) {
+  voiceTriggerSelect.addEventListener("change", () => {
+    saveSettings({ voice_alarm_trigger_seconds: parseInt(voiceTriggerSelect.value, 10) });
+  });
+}
+
+const ppeViolationSelect = document.getElementById("ppeViolationSelect");
+if (ppeViolationSelect) {
+  ppeViolationSelect.addEventListener("change", () => {
+    saveSettings({ alert_ppe_violation_seconds: parseInt(ppeViolationSelect.value, 10) });
+  });
+}
+
+const fallEmergencySelect = document.getElementById("fallEmergencySelect");
+if (fallEmergencySelect) {
+  fallEmergencySelect.addEventListener("change", () => {
+    saveSettings({ alert_fall_emergency_seconds: parseFloat(fallEmergencySelect.value) });
+  });
+}
+
+const smokingAlertSelect = document.getElementById("smokingAlertSelect");
+if (smokingAlertSelect) {
+  smokingAlertSelect.addEventListener("change", () => {
+    saveSettings({ alert_smoking_seconds: parseFloat(smokingAlertSelect.value) });
+  });
+}
+
+const fireEmergencySelect = document.getElementById("fireEmergencySelect");
+if (fireEmergencySelect) {
+  fireEmergencySelect.addEventListener("change", () => {
+    const val = parseFloat(fireEmergencySelect.value);
+    saveSettings({
+      alert_fire_emergency_seconds: val,
+      alert_smoke_emergency_seconds: val + 0.5,
+    });
+  });
+}
+
+const overstayAlertSelect = document.getElementById("overstayAlertSelect");
+if (overstayAlertSelect) {
+  overstayAlertSelect.addEventListener("change", () => {
+    saveSettings({ alert_er_activity_seconds: parseInt(overstayAlertSelect.value, 10) });
   });
 }
 
