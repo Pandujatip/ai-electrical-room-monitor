@@ -79,5 +79,21 @@ class NotifierTests(unittest.TestCase):
         self.assertEqual(kwargs.get("alert_key") or args[0], "er_overstay_worker")
 
 
+    @patch.object(NotificationManager, "dispatch_alert")
+    def test_camera_offline_and_recovery_alert(self, mock_dispatch):
+        # 1. Trigger camera offline alert
+        self.mgr.notify_camera_status(connected=False, room_name="Electrical Room 17", error_msg="RTSP disconnect")
+        mock_dispatch.assert_called_once()
+        args, kwargs = mock_dispatch.call_args
+        self.assertEqual(kwargs.get("alert_key") or args[0], "cam_offline_electricalroom17")
+
+        # 2. Trigger camera online recovery
+        mock_dispatch.reset_mock()
+        self.mgr.notify_camera_status(connected=True, room_name="Electrical Room 17")
+        mock_dispatch.assert_called_once()
+        args, kwargs = mock_dispatch.call_args
+        self.assertEqual(kwargs.get("alert_key") or args[0], "cam_online_electricalroom17")
+
+
 if __name__ == "__main__":
     unittest.main()

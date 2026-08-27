@@ -657,14 +657,17 @@ class PersonMonitor:
         while not self._stop.is_set():
             capture = self._open_capture()
             capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            cam_name = notifier.settings.get("camera_name") or self.settings.camera_name
             if not capture.isOpened():
                 self._set_status(connected=False, last_error="Gagal membuka stream/kamera; mencoba ulang")
                 capture.release()
-                self.store.add_event(self.settings.camera_name, "ERROR", 0, message="Camera connection failed")
+                self.store.add_event(cam_name, "CAMERA_OFFLINE", 0, message="Kamera CCTV terputus/offline")
+                notifier.notify_camera_status(connected=False, room_name=cam_name, error_msg="Gagal membuka stream RTSP kamera")
                 self._stop.wait(5)
                 continue
 
             self._set_status(connected=True, last_error="; ".join(self._detector_errors) or None)
+            notifier.notify_camera_status(connected=True, room_name=cam_name)
             reader_stop = threading.Event()
             reader_error: list[Exception | None] = [None]
             reader = threading.Thread(
@@ -711,6 +714,7 @@ class PersonMonitor:
                     self._publish_status(annotated)
             except Exception as exc:
                 self._set_status(connected=False, last_error=str(exc))
+                notifier.notify_camera_status(connected=False, room_name=cam_name, error_msg=str(exc))
             finally:
                 reader_stop.set()
                 reader.join(timeout=2)

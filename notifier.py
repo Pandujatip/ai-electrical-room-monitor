@@ -29,6 +29,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "alert_er_activity_enabled": True,
     "alert_er_activity_seconds": 300,  # 5 menit
     "alert_smoking_enabled": True,
+    "alert_camera_offline_enabled": True,
     "alert_cooldown_seconds": 3600,  # 1 jam (3600s) per orang agar tidak spam
 }
 
@@ -52,6 +53,7 @@ class NotificationManager:
         self.bridge_url = bridge_url.rstrip("/")
         self._lock = threading.Lock()
         self._last_alert_times: dict[str, float] = self._load_cooldowns()
+        self._offline_rooms: set[str] = set()
         self.settings: dict[str, Any] = self._load_settings()
 
     def _load_cooldowns(self) -> dict[str, float]:
@@ -297,6 +299,46 @@ class NotificationManager:
                         ),
                         image_path=latest_snapshot_path,
                     )
+
+    def notify_camera_status(
+        self,
+        connected: bool,
+        room_name: str = "Electrical Room",
+        error_msg: str = "",
+    ) -> None:
+        """Alert when camera stream goes offline or recovers online."""
+        if not self.settings.get("alert_camera_offline_enabled", True):
+            return
+
+        room_key = re.sub(r"[^a-z0-9]", "", room_name.lower()) or "default_room"
+        if not connected:
+            self._offline_rooms.add(room_key)
+            self.dispatch_alert(
+                alert_key=f"cam_offline_{room_key}",
+                title="🚨 PERINGATAN SISTEM: KAMERA CCTV TERPUTUS / OFFLINE!",
+                message=(
+                    f"📍 *Lokasi:* {room_name}\n"
+                    f"⚠️ *Status:* Aliran video RTSP terputus atau daya CCTV mati!\n"
+                    f"Keterangan: {error_msg or 'Koneksi kamera gagal'}\n\n"
+                    f"🚨 *Harap segera periksa kabel LAN / sumber daya PoE kamera!*"
+                ),
+            )
+        else:
+            # If camera was offline, send online recovery message
+            if room_key in self._offline_rooms:
+                self._offline_rooms.remove(room_key)
+                self.dispatch_alert(
+                    alert_key=f"cam_online_{room_key}",
+                    title="✅ INFORMASI SISTEM: KAMERA CCTV KEMBALI ONLINE",
+                    message=(
+                        f"📍 *Lokasi:* {room_name}\n"
+                        f"Status: Aliran video RTSP berhasil terhubung normal.\n"
+                        f"Pemantauan keselamatan K3 kembali aktif."
+                    ),
+                    force=True,
+                )
+                self._last_alert_times.pop(f"cam_offline_{room_key}", None)
+                self._save_cooldowns()
 
 
 notifier = NotificationManager()

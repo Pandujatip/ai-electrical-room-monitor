@@ -273,6 +273,8 @@ async function loadSettings() {
     if (toggleWaFall) toggleWaFall.checked = data.alert_fall_emergency_enabled !== false;
     if (toggleWaSmoking) toggleWaSmoking.checked = data.alert_smoking_enabled !== false;
     if (toggleWaOverstay) toggleWaOverstay.checked = data.alert_er_activity_enabled !== false;
+    const toggleWaCameraOffline = document.getElementById("toggleWaCameraOffline");
+    if (toggleWaCameraOffline) toggleWaCameraOffline.checked = data.alert_camera_offline_enabled !== false;
     const cooldownSelect = document.getElementById("cooldownSelect");
     if (cooldownSelect && data.alert_cooldown_seconds) {
       cooldownSelect.value = String(data.alert_cooldown_seconds);
@@ -340,6 +342,12 @@ if (toggleWaSmoking) {
 if (toggleWaOverstay) {
   toggleWaOverstay.addEventListener("change", () => {
     saveSettings({ alert_er_activity_enabled: toggleWaOverstay.checked });
+  });
+}
+const toggleWaCameraOffline = document.getElementById("toggleWaCameraOffline");
+if (toggleWaCameraOffline) {
+  toggleWaCameraOffline.addEventListener("change", () => {
+    saveSettings({ alert_camera_offline_enabled: toggleWaCameraOffline.checked });
   });
 }
 
