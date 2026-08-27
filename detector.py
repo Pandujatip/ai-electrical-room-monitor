@@ -329,7 +329,7 @@ def associate_ppe(
 def analyze_posture(
     person_box: tuple[int, int, int, int],
     valid_kps: dict[int, tuple[float, float]] | None = None,
-    angle_threshold: float = 35.0,
+    angle_threshold: float = 38.0,
     aspect_ratio_threshold: float = 1.35,
 ) -> tuple[str, float | None, bool]:
     """Analyze person posture from bounding box and anatomical keypoints.
@@ -349,25 +349,32 @@ def analyze_posture(
     shoulders = [valid_kps[k] for k in (KP_LEFT_SHOULDER, KP_RIGHT_SHOULDER) if k in valid_kps]
     hips = [valid_kps[k] for k in (KP_LEFT_HIP, KP_RIGHT_HIP) if k in valid_kps]
     head = [valid_kps[k] for k in (KP_NOSE, KP_LEFT_EYE, KP_RIGHT_EYE, KP_LEFT_EAR, KP_RIGHT_EAR) if k in valid_kps]
+    wrists = [valid_kps[k] for k in (KP_LEFT_WRIST, KP_RIGHT_WRIST) if k in valid_kps]
+    knees = [valid_kps[k] for k in (KP_LEFT_KNEE, KP_RIGHT_KNEE) if k in valid_kps]
 
-    # 1. Check head-to-shoulder vertical orientation (crucial for webcam/desk sitting view vs fallen)
+    # Calculate spine angle if both shoulders and hips are available
+    spine_angle = None
+    if shoulders and hips:
+        sx = sum(p[0] for p in shoulders) / len(shoulders)
+        sy = sum(p[1] for p in shoulders) / len(shoulders)
+        hx = sum(p[0] for p in hips) / len(hips)
+        hy = sum(p[1] for p in hips) / len(hips)
+        spine_angle = float(np.degrees(np.arctan2(abs(sy - hy), max(1e-4, abs(sx - hx)))))
+
+    # 1. Check head-to-shoulder vertical orientation (for upright webcam / sitting view)
     if head and shoulders:
         hx = sum(p[0] for p in head) / len(head)
         hy = sum(p[1] for p in head) / len(head)
         sx = sum(p[0] for p in shoulders) / len(shoulders)
         sy = sum(p[1] for p in shoulders) / len(shoulders)
-
         sh_dist = abs(shoulders[0][0] - shoulders[1][0]) if len(shoulders) >= 2 else pw * 0.5
         head_vert_diff = sy - hy  # positive when head is above shoulders
         head_horiz_diff = abs(sx - hx)
         head_neck_angle = float(np.degrees(np.arctan2(max(0.0, head_vert_diff), max(1e-4, head_horiz_diff))))
 
-        # If head is clearly above shoulders (upright head/neck >= 50 deg), person is upright (sitting/standing)
-        if head_vert_diff > max(15.0, sh_dist * 0.18) and head_neck_angle >= 50.0:
-            if hips:
-                hx_hip = sum(p[0] for p in hips) / len(hips)
-                hy_hip = sum(p[1] for p in hips) / len(hips)
-                spine_angle = float(np.degrees(np.arctan2(abs(sy - hy_hip), max(1e-4, abs(sx - hx_hip)))))
+        # If head is high above shoulders and upright
+        if head_vert_diff > max(20.0, sh_dist * 0.25) and head_neck_angle >= 50.0:
+            if hips and spine_angle is not None:
                 if spine_angle <= angle_threshold:
                     return "FALLEN", spine_angle, True
                 elif spine_angle <= 62.0:
@@ -375,24 +382,30 @@ def analyze_posture(
                 return "STANDING", spine_angle, False
             return "SITTING", head_neck_angle, False
 
-    # 2. Check full torso (shoulders to hips)
-    if shoulders and hips:
-        sx = sum(p[0] for p in shoulders) / len(shoulders)
-        sy = sum(p[1] for p in shoulders) / len(shoulders)
-        hx = sum(p[0] for p in hips) / len(hips)
-        hy = sum(p[1] for p in hips) / len(hips)
-        spine_angle = float(np.degrees(np.arctan2(abs(sy - hy), max(1e-4, abs(sx - hx)))))
+    # 2. Check Arm Span (Outstretched arms on floor - Prone / T-Pose fall)
+    if len(wrists) >= 2 and len(shoulders) >= 2:
+        wrist_span = abs(wrists[0][0] - wrists[1][0])
+        shoulder_span = max(15.0, abs(shoulders[0][0] - shoulders[1][0]))
+        if wrist_span >= 1.45 * shoulder_span and aspect_ratio >= 0.55:
+            return "FALLEN", spine_angle if spine_angle is not None else 0.0, True
+
+    # 3. Check Torso (Shoulders to Hips)
+    if shoulders and hips and spine_angle is not None:
         if spine_angle <= angle_threshold:
             return "FALLEN", spine_angle, True
-        elif spine_angle <= 62.0:
+
+        # Prone fall along aisle: compressed vertical torso height or wide knee spread on floor
+        torso_dy = abs(sum(p[1] for p in shoulders) / len(shoulders) - sum(p[1] for p in hips) / len(hips))
+        if aspect_ratio >= 0.70 and (torso_dy <= max(35.0, pw * 0.40) or (len(knees) >= 2 and abs(knees[0][0] - knees[1][0]) >= 30.0)):
+            return "FALLEN", spine_angle, True
+
+        if spine_angle <= 62.0:
             return "BENDING", spine_angle, False
         return "STANDING", spine_angle, False
 
-    # 3. If head and shoulders are horizontal (lying flat on floor)
-    if head and shoulders:
-        sh_dist = abs(shoulders[0][0] - shoulders[1][0]) if len(shoulders) >= 2 else pw * 0.5
-        if abs(sy - hy) <= max(25.0, sh_dist * 0.35) and aspect_ratio >= 1.15:
-            return "FALLEN", head_neck_angle, True
+    # 4. Pure Aspect Ratio for fallen (Horizontal on floor)
+    if aspect_ratio >= 1.25:
+        return "FALLEN", spine_angle if spine_angle is not None else 0.0, True
 
     return "STANDING", None, False
 
