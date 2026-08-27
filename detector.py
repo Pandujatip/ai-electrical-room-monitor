@@ -342,8 +342,10 @@ def analyze_posture(
     aspect_ratio = float(pw) / max(1.0, float(ph))
 
     if not valid_kps:
-        if aspect_ratio >= 1.80:
+        if aspect_ratio >= 0.85:
             return "FALLEN", None, True
+        elif aspect_ratio >= 0.58:
+            return "SITTING", None, False
         return "STANDING", None, False
 
     shoulders = [valid_kps[k] for k in (KP_LEFT_SHOULDER, KP_RIGHT_SHOULDER) if k in valid_kps]
@@ -861,7 +863,7 @@ class PersonMonitor:
                 x1, y1, x2, y2 = xyxy.tolist()
                 box = (x1, y1, x2 - x1, y2 - y1)
                 area_ratio = _box_area(box) / frame_area
-                if box[3] < self.settings.person_min_height or area_ratio < self.settings.person_min_area_ratio:
+                if max(box[2], box[3]) < self.settings.person_min_height or area_ratio < self.settings.person_min_area_ratio:
                     continue
                 if track_id is None:
                     track_id = self._fallback_track_id

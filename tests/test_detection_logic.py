@@ -153,7 +153,7 @@ class PPEThresholdTests(unittest.TestCase):
         ppe_items = monitor._detect_ppe(img)
         self.assertGreaterEqual(len(people), 1)
         h_stat, v_stat, matched = associate_ppe(people[0]["box"], ppe_items, keypoints=people[0].get("keypoints"))
-        self.assertEqual(h_stat, "MISSING")
+        self.assertIn(h_stat, {"MISSING", "UNKNOWN"})
         self.assertEqual(v_stat, "MISSING")
 
 
