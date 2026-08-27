@@ -1231,6 +1231,13 @@ class PersonMonitor:
         has_fallen_global = any(track.get("posture") == "FALLEN" for track in self._tracks.values())
         has_smoking_global = any(track.get("is_smoking") for track in self._tracks.values())
 
+        # Responsive scaling based on stream resolution
+        img_w = output.shape[1]
+        scale = max(0.85, min(2.5, img_w / 800.0))
+        font_scale = 0.58 * scale
+        font_thick = max(2, int(scale * 1.5))
+        box_thickness = max(2, int(scale * 2.0))
+
         for track in self._tracks.values():
             x, y, w, h = track["box"]
             is_fallen = track.get("posture") == "FALLEN"
@@ -1241,27 +1248,27 @@ class PersonMonitor:
 
             if is_fallen or is_smoking:
                 color = (0, 0, 255)
-                box_thickness = 3
+                box_thick = box_thickness + 2
             elif is_suspect:
                 color = (0, 140, 255)
-                box_thickness = 2
+                box_thick = box_thickness + 1
             elif violation:
                 color = (0, 0, 255)
-                box_thickness = 2
+                box_thick = box_thickness
             elif complete:
                 color = (0, 190, 0)
-                box_thickness = 2
+                box_thick = box_thickness
             else:
                 color = (0, 165, 255)
-                box_thickness = 2
+                box_thick = box_thickness
 
-            cv2.rectangle(output, (x, y), (x + w, y + h), color, box_thickness)
+            cv2.rectangle(output, (x, y), (x + w, y + h), color, box_thick)
 
             # Draw face box if present
             fbox = track.get("face_box")
             if fbox is not None:
                 fx, fy, fw, fh = fbox
-                cv2.rectangle(output, (fx, fy), (fx + fw, fy + fh), (255, 255, 0), 1)
+                cv2.rectangle(output, (fx, fy), (fx + fw, fy + fh), (255, 255, 0), max(1, int(scale)))
 
             # Draw subtle skeleton connections if pose keypoints are present
             kps = track.get("keypoints")
@@ -1270,9 +1277,9 @@ class PersonMonitor:
                 if p1_idx in valid_pts and p2_idx in valid_pts:
                     pt1 = (int(valid_pts[p1_idx][0]), int(valid_pts[p1_idx][1]))
                     pt2 = (int(valid_pts[p2_idx][0]), int(valid_pts[p2_idx][1]))
-                    cv2.line(output, pt1, pt2, (255, 200, 0), 1, cv2.LINE_AA)
+                    cv2.line(output, pt1, pt2, (255, 200, 0), max(1, int(scale)), cv2.LINE_AA)
             for pt_coords in valid_pts.values():
-                cv2.circle(output, (int(pt_coords[0]), int(pt_coords[1])), 2, (0, 255, 255), -1, cv2.LINE_AA)
+                cv2.circle(output, (int(pt_coords[0]), int(pt_coords[1])), max(2, int(scale * 2)), (0, 255, 255), -1, cv2.LINE_AA)
 
             name = track.get("name", f"ID {track['id']}")
             if is_fallen:
@@ -1284,39 +1291,62 @@ class PersonMonitor:
                     f"{name} ({int(now - track['entered_at'])}s) "
                     f"H:{track['helmet']} V:{track['vest']}"
                 )
-            cv2.putText(output, label, (x, max(y - 8, 20)), cv2.FONT_HERSHEY_SIMPLEX, 0.48, color, 2)
+
+            # Draw solid contrast badge behind label text for high readability
+            (text_w, text_h), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thick)
+            badge_y1 = max(0, y - text_h - int(10 * scale))
+            badge_y2 = y
+            badge_x2 = min(output.shape[1], x + text_w + int(12 * scale))
+            cv2.rectangle(output, (x, badge_y1), (badge_x2, badge_y2), color, -1)
+            cv2.putText(
+                output,
+                label,
+                (x + int(6 * scale), y - int(5 * scale)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                font_scale,
+                (255, 255, 255),
+                font_thick,
+                cv2.LINE_AA,
+            )
 
         ppe_status = str(self._status.get("ppe_status", "CHECKING"))
+        top_font_scale = 0.82 * scale
+        top_font_thick = max(2, int(scale * 2.2))
+        top_y = int(40 * scale)
+
         if has_fallen_global:
             cv2.putText(
                 output,
                 "⚠️ PERINGATAN DARURAT: PERSONEL JATUH / PINGSAN!",
-                (20, 35),
+                (int(20 * scale), top_y),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.68,
+                top_font_scale,
                 (0, 0, 255),
-                2,
+                top_font_thick,
+                cv2.LINE_AA,
             )
         elif has_smoking_global:
             cv2.putText(
                 output,
                 "🔥 PERINGATAN K3: DETEKSI MEROKOK DI RUANG ELEKTRIKAL!",
-                (20, 35),
+                (int(20 * scale), top_y),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.68,
+                top_font_scale,
                 (0, 0, 255),
-                2,
+                top_font_thick,
+                cv2.LINE_AA,
             )
         else:
             header_color = (0, 0, 255) if ppe_status == "VIOLATION" else (255, 255, 255)
             cv2.putText(
                 output,
                 f"People: {len(self._tracks)} | PPE: {ppe_status}",
-                (20, 35),
+                (int(20 * scale), top_y),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.68,
+                top_font_scale,
                 header_color,
-                2,
+                top_font_thick,
+                cv2.LINE_AA,
             )
         return output
 
