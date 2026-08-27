@@ -329,10 +329,11 @@ def associate_ppe(
 def analyze_posture(
     person_box: tuple[int, int, int, int],
     valid_kps: dict[int, tuple[float, float]] | None = None,
+    face_box: tuple[int, int, int, int] | None = None,
     angle_threshold: float = 38.0,
     aspect_ratio_threshold: float = 1.35,
 ) -> tuple[str, float | None, bool]:
-    """Analyze person posture from bounding box and anatomical keypoints.
+    """Analyze person posture from bounding box, anatomical keypoints, and face box.
 
     Returns:
         (posture_label, angle_degrees, is_lying_down)
@@ -341,10 +342,17 @@ def analyze_posture(
     px, py, pw, ph = person_box
     aspect_ratio = float(pw) / max(1.0, float(ph))
 
+    # If face box is present and occupies a normal upper-body proportion (e.g. webcam sitting view)
+    if face_box is not None:
+        fx, fy, fw, fh = face_box
+        face_ratio = float(fh) / max(1.0, float(ph))
+        if face_ratio >= 0.15 and fy <= py + ph * 0.50:
+            return "SITTING" if aspect_ratio >= 0.65 else "STANDING", None, False
+
     if not valid_kps:
-        if aspect_ratio >= 0.85:
+        if aspect_ratio >= 1.25:
             return "FALLEN", None, True
-        elif aspect_ratio >= 0.58:
+        elif aspect_ratio >= 0.65:
             return "SITTING", None, False
         return "STANDING", None, False
 
@@ -415,74 +423,80 @@ def analyze_posture(
 def analyze_smoking_gesture(
     person_box: tuple[int, int, int, int],
     valid_kps: dict[int, tuple[float, float]] | None = None,
+    face_box: tuple[int, int, int, int] | None = None,
     frame: np.ndarray | None = None,
 ) -> tuple[bool, float | None]:
-    """Analyze hand-to-mouth smoking action from pose keypoints and visual ROI.
+    """Analyze hand-to-mouth smoking action, cigarette stick, glowing ember, and smoke.
 
     Returns:
         (is_smoking, normalized_distance)
     """
-    if not valid_kps:
-        return False, None
-
     px, py, pw, ph = person_box
-    nose = valid_kps.get(KP_NOSE)
-    if not nose:
-        return False, None
+    mouth_x = None
+    mouth_y = None
+    h_span = 40.0
 
-    # Eyes & Mouth position estimation (slightly below nose)
-    eyes = [valid_kps[k] for k in (KP_LEFT_EYE, KP_RIGHT_EYE) if k in valid_kps]
-    if eyes:
-        eye_y = sum(p[1] for p in eyes) / len(eyes)
-        mouth_y = nose[1] + max(8.0, (nose[1] - eye_y) * 0.75)
-    else:
-        mouth_y = nose[1] + 12.0
-    mouth_x = nose[0]
+    # 1. Determine Mouth & Head coordinates from Keypoints or Face Box
+    if valid_kps:
+        nose = valid_kps.get(KP_NOSE)
+        if nose:
+            eyes = [valid_kps[k] for k in (KP_LEFT_EYE, KP_RIGHT_EYE) if k in valid_kps]
+            if eyes:
+                eye_y = sum(p[1] for p in eyes) / len(eyes)
+                mouth_y = nose[1] + max(8.0, (nose[1] - eye_y) * 0.75)
+            else:
+                mouth_y = nose[1] + 12.0
+            mouth_x = nose[0]
 
-    # Face / Head scale
-    ears = [valid_kps[k] for k in (KP_LEFT_EAR, KP_RIGHT_EAR) if k in valid_kps]
-    if len(ears) == 2:
-        h_span = abs(ears[0][0] - ears[1][0])
-    elif len(eyes) == 2:
-        h_span = abs(eyes[0][0] - eyes[1][0]) * 1.8
-    else:
-        h_span = pw * 0.35
+            ears = [valid_kps[k] for k in (KP_LEFT_EAR, KP_RIGHT_EAR) if k in valid_kps]
+            if len(ears) == 2:
+                h_span = abs(ears[0][0] - ears[1][0])
+            elif len(eyes) == 2:
+                h_span = abs(eyes[0][0] - eyes[1][0]) * 1.8
+            else:
+                h_span = pw * 0.35
+
+    if mouth_x is None and face_box is not None:
+        fx, fy, fw, fh = face_box
+        mouth_x = fx + fw * 0.5
+        mouth_y = fy + fh * 0.78
+        h_span = float(fw)
+
+    if mouth_x is None:
+        # Fallback to upper body center
+        mouth_x = px + pw * 0.5
+        mouth_y = py + ph * 0.25
+        h_span = pw * 0.40
+
     h_span = max(20.0, float(h_span))
 
-    # Shoulders level
-    shoulders = [valid_kps[k] for k in (KP_LEFT_SHOULDER, KP_RIGHT_SHOULDER) if k in valid_kps]
-    if shoulders:
-        shoulder_y = sum(p[1] for p in shoulders) / len(shoulders)
-    else:
-        shoulder_y = mouth_y + 80.0
-
-    arm_pairs = [(KP_LEFT_ELBOW, KP_LEFT_WRIST), (KP_RIGHT_ELBOW, KP_RIGHT_WRIST)]
-    min_norm_dist = 999.0
+    # 2. Check Pose Kinematics (if keypoints available)
     is_gesture_smoking = False
+    min_norm_dist = 999.0
 
-    for e_idx, w_idx in arm_pairs:
-        if w_idx not in valid_kps:
-            continue
-        wx, wy = valid_kps[w_idx]
+    if valid_kps:
+        shoulders = [valid_kps[k] for k in (KP_LEFT_SHOULDER, KP_RIGHT_SHOULDER) if k in valid_kps]
+        shoulder_y = sum(p[1] for p in shoulders) / len(shoulders) if shoulders else mouth_y + 80.0
+        arm_pairs = [(KP_LEFT_ELBOW, KP_LEFT_WRIST), (KP_RIGHT_ELBOW, KP_RIGHT_WRIST)]
 
-        # 1. Wrist MUST be lifted up to at least shoulder level (wy <= shoulder_y + 15)
-        if wy > shoulder_y + 15.0:
-            continue
+        for e_idx, w_idx in arm_pairs:
+            if w_idx not in valid_kps:
+                continue
+            wx, wy = valid_kps[w_idx]
+            if wy > shoulder_y + 5.0:
+                continue
+            d_wrist = float(np.hypot(wx - mouth_x, wy - mouth_y))
+            norm_wrist = d_wrist / h_span
+            if norm_wrist < min_norm_dist:
+                min_norm_dist = norm_wrist
+            if norm_wrist <= 1.20 and wy >= mouth_y - h_span * 0.60 and wy <= mouth_y + h_span * 0.80:
+                is_gesture_smoking = True
+                break
 
-        d_wrist = float(np.hypot(wx - mouth_x, wy - mouth_y))
-        norm_wrist = d_wrist / h_span
-        if norm_wrist < min_norm_dist:
-            min_norm_dist = norm_wrist
-
-        if norm_wrist <= 0.85 and wy >= mouth_y - h_span * 0.50:
-            is_gesture_smoking = True
-            break
-
-        if e_idx in valid_kps:
-            ex, ey = valid_kps[e_idx]
-            forearm_vx = wx - ex
-            forearm_vy = wy - ey
-            if ey > wy + 15.0:
+            if e_idx in valid_kps:
+                ex, ey = valid_kps[e_idx]
+                forearm_vx = wx - ex
+                forearm_vy = wy - ey
                 for factor in [0.25, 0.40, 0.55]:
                     hx = wx + factor * forearm_vx
                     hy = wy + factor * forearm_vy
@@ -490,73 +504,56 @@ def analyze_smoking_gesture(
                     norm_hand = d_hand / h_span
                     if norm_hand < min_norm_dist:
                         min_norm_dist = norm_hand
-                    if norm_hand <= 0.70 and (hy >= mouth_y - h_span * 0.50) and (hy <= mouth_y + h_span * 0.50):
+                    if norm_hand <= 0.85 and (hy >= mouth_y - h_span * 0.60) and (hy <= mouth_y + h_span * 0.60):
                         is_gesture_smoking = True
                         break
-        if is_gesture_smoking:
-            break
+            if is_gesture_smoking:
+                break
 
-    # 2. Advanced Vision Analysis for Cigarette Stick & Glowing Ember (Rokok Batang)
+    # 3. Vision Analysis for Cigarette Stick & Glowing Ember (Rokok Batang)
     has_ember = False
     has_stick = False
     has_smoke = False
+    ember_px_count = 0
 
     if frame is not None:
-        fh, fw = frame.shape[:2]
-        # Focus on Mouth & Finger Interaction Zone
+        fh_img, fw_img = frame.shape[:2]
         y1 = max(0, int(mouth_y - h_span * 0.40))
-        y2 = min(fh, int(mouth_y + h_span * 0.60))
-        x1 = max(0, int(mouth_x - h_span * 0.65))
-        x2 = min(fw, int(mouth_x + h_span * 0.65))
+        y2 = min(fh_img, int(mouth_y + h_span * 0.70))
+        x1 = max(0, int(mouth_x - h_span * 0.70))
+        x2 = min(fw_img, int(mouth_x + h_span * 0.70))
 
         if y2 > y1 + 5 and x2 > x1 + 5:
             mouth_roi = frame[y1:y2, x1:x2]
 
             # A. Deteksi Bara Api Rokok (Glowing Red/Orange Ember Hotspot)
             hsv = cv2.cvtColor(mouth_roi, cv2.COLOR_BGR2HSV)
-            mask_red1 = cv2.inRange(hsv, np.array([0, 90, 160]), np.array([12, 255, 255]))
-            mask_red2 = cv2.inRange(hsv, np.array([165, 90, 160]), np.array([180, 255, 255]))
-            mask_orange = cv2.inRange(hsv, np.array([13, 110, 170]), np.array([28, 255, 255]))
-            mask_ember = cv2.bitwise_or(mask_red1, cv2.bitwise_or(mask_red2, mask_orange))
+            mask_ember = cv2.bitwise_or(
+                cv2.inRange(hsv, np.array([0, 40, 110]), np.array([22, 255, 255])),
+                cv2.inRange(hsv, np.array([160, 40, 110]), np.array([180, 255, 255]))
+            )
+            ember_px_count = cv2.countNonZero(mask_ember)
+            if ember_px_count >= 25:
+                has_ember = True
 
-            contours, _ = cv2.findContours(mask_ember, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            for cnt in contours:
-                area = cv2.contourArea(cnt)
-                if 2.0 <= area <= 120.0:  # Compact cigarette ember spot
-                    has_ember = True
-                    break
-
-            # B. Deteksi Batang Rokok Putih/Silindris (Cigarette Stick)
+            # B. Deteksi Batang Rokok Putih & Asap (Edge lines & Stick contour)
             gray = cv2.cvtColor(mouth_roi, cv2.COLOR_BGR2GRAY)
-            # High-contrast bright mask for white cigarette body
-            _, mask_white = cv2.threshold(gray, 185, 255, cv2.THRESH_BINARY)
-            stick_cnts, _ = cv2.findContours(mask_white, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            for cnt in stick_cnts:
-                if len(cnt) >= 5:
-                    rect = cv2.minAreaRect(cnt)
-                    rw, rh = rect[1]
-                    if min(rw, rh) > 0:
-                        elongation = max(rw, rh) / min(rw, rh)
-                        # Elongated narrow stick geometry
-                        if 2.2 <= elongation <= 12.0 and 15.0 <= max(rw, rh) <= h_span * 1.2:
-                            has_stick = True
-                            break
+            _, mask_white = cv2.threshold(gray, 175, 255, cv2.THRESH_BINARY)
+            stick_px = cv2.countNonZero(mask_white)
+            if stick_px >= 20:
+                has_stick = True
 
-            # C. Deteksi Asap Tipis Membumbung (Wispy Smoke Texture Blur)
-            edges = cv2.Canny(gray, 40, 120)
-            lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=12, minLineLength=8, maxLineGap=3)
-            if lines is not None and len(lines) >= 2 and has_ember:
+            edges = cv2.Canny(gray, 30, 110)
+            lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=10, minLineLength=6, maxLineGap=4)
+            if lines is not None and len(lines) >= 3:
                 has_smoke = True
 
-    # Final Decision focused on Conventional Cigarette Stick (Rokok Batang):
-    # Triggered by: Hand-to-mouth gesture OR presence of glowing ember near mouth OR cigarette stick near mouth
+    # Final Decision for Cigarette Smoking (Rokok Batang):
     if is_gesture_smoking:
         final_smoking = True
-    elif has_ember and min_norm_dist <= 1.3:
+    elif has_ember and (has_stick or has_smoke or ember_px_count >= 60):
         final_smoking = True
-    elif has_stick and has_ember:
-        final_smoking = True
-    elif has_stick and min_norm_dist <= 1.0:
+    elif has_ember and min_norm_dist <= 1.5:
         final_smoking = True
     else:
         final_smoking = False
@@ -1015,12 +1012,23 @@ class PersonMonitor:
                 keypoints=person.get("keypoints"),
             )
 
-            # Posture & Fall / Unconscious detection
+            # Face recognition & identity locking (run early so face_box is available for posture & smoking)
             kps = track.get("keypoints")
             valid_kps = _extract_valid_keypoints(kps, self.settings.pose_keypoint_confidence) if kps is not None else None
+            if frame is not None and getattr(self, "_face_manager", None) and self._face_manager.enabled:
+                if not track.get("face_checked") or self._frame_number % 6 == 0:
+                    name, conf, fbox = self._face_manager.identify_person(frame, track["box"], valid_kps)
+                    if fbox is not None:
+                        track["name"] = name
+                        track["face_box"] = fbox
+                        track["face_checked"] = True
+
+            # Posture & Fall / Unconscious detection
+            face_box = track.get("face_box")
             posture, angle, is_lying = analyze_posture(
                 track["box"],
                 valid_kps,
+                face_box=face_box,
                 angle_threshold=self.settings.fall_angle_threshold,
                 aspect_ratio_threshold=self.settings.fall_aspect_ratio_threshold,
             )
@@ -1049,14 +1057,19 @@ class PersonMonitor:
                 track["lying_start_time"] = None
                 track["fall_alert_triggered"] = False
 
-            # Smoking gesture & vision analysis & tracking
+            # Smoking gesture & vision analysis & tracking (Rokok Batang)
             if getattr(self.settings, "smoking_detection_enabled", True):
-                hand_near_mouth, dist_score = analyze_smoking_gesture(track["box"], valid_kps, frame=frame)
+                hand_near_mouth, dist_score = analyze_smoking_gesture(
+                    track["box"],
+                    valid_kps,
+                    face_box=face_box,
+                    frame=frame,
+                )
                 if hand_near_mouth:
                     if not track.get("smoking_start_time"):
                         track["smoking_start_time"] = now
                     smoking_duration = now - track["smoking_start_time"]
-                    if smoking_duration >= getattr(self.settings, "smoking_debounce_seconds", 2.5):
+                    if smoking_duration >= getattr(self.settings, "smoking_debounce_seconds", 1.5):
                         track["is_smoking"] = True
                         track["smoking_duration"] = int(smoking_duration)
                         if not track.get("smoking_alert_triggered"):
@@ -1076,22 +1089,13 @@ class PersonMonitor:
                                 cooldown=30.0,
                             )
                 else:
-                    if track.get("smoking_start_time") and (now - track.get("last_hand_at_mouth", now) > 3.0):
+                    if track.get("smoking_start_time") and (now - track.get("last_hand_at_mouth", now) > 2.5):
                         track["smoking_start_time"] = None
                         track["is_smoking"] = False
                         track["smoking_duration"] = 0
                         track["smoking_alert_triggered"] = False
                 if hand_near_mouth:
                     track["last_hand_at_mouth"] = now
-
-            # Face recognition & identity locking (updates live every 6 frames or on first detection)
-            if frame is not None and getattr(self, "_face_manager", None) and self._face_manager.enabled:
-                if not track.get("face_checked") or self._frame_number % 6 == 0:
-                    name, conf, fbox = self._face_manager.identify_person(frame, track["box"], valid_kps)
-                    if fbox is not None:
-                        track["name"] = name
-                        track["face_box"] = fbox
-                        track["face_checked"] = True
 
         stale = [track_id for track_id, track in self._tracks.items() if now - track["last_seen"] > 2.5]
         for track_id in stale:
