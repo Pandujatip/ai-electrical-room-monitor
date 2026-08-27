@@ -670,5 +670,90 @@ if (trackpad && knob) {
   window.addEventListener("touchend", stopTrackpad);
 }
 
+// ==========================================
+// FLOATING MODAL CONTROLLERS (SETTINGS & LOGS)
+// ==========================================
+const modalSettings = document.getElementById("modalSettings");
+const modalLogs = document.getElementById("modalLogs");
+const btnOpenSettings = document.getElementById("btnOpenSettings");
+const btnCloseSettings = document.getElementById("btnCloseSettings");
+const btnOpenLogs = document.getElementById("btnOpenLogs");
+const btnCloseLogs = document.getElementById("btnCloseLogs");
+
+function openModal(modal) {
+  if (modal) modal.classList.add("open");
+}
+
+function closeModal(modal) {
+  if (modal) modal.classList.remove("open");
+}
+
+if (btnOpenSettings) {
+  btnOpenSettings.addEventListener("click", () => {
+    loadSettings();
+    loadWhatsAppStatus();
+    loadWhatsAppGroups();
+    loadFaces();
+    openModal(modalSettings);
+  });
+}
+
+if (btnCloseSettings) {
+  btnCloseSettings.addEventListener("click", () => closeModal(modalSettings));
+}
+
+if (btnOpenLogs) {
+  btnOpenLogs.addEventListener("click", () => {
+    refresh();
+    openModal(modalLogs);
+  });
+}
+
+if (btnCloseLogs) {
+  btnCloseLogs.addEventListener("click", () => closeModal(modalLogs));
+}
+
+// Close when clicking outside modal box
+[modalSettings, modalLogs].forEach((m) => {
+  if (m) {
+    m.addEventListener("click", (e) => {
+      if (e.target === m) closeModal(m);
+    });
+  }
+});
+
+// Close with Escape key
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    closeModal(modalSettings);
+    closeModal(modalLogs);
+  }
+});
+
+// Settings Modal Tabs
+const tabSettingsWa = document.getElementById("tabSettingsWa");
+const tabSettingsAlerts = document.getElementById("tabSettingsAlerts");
+const tabSettingsFaces = document.getElementById("tabSettingsFaces");
+const viewSettingsWa = document.getElementById("viewSettingsWa");
+const viewSettingsAlerts = document.getElementById("viewSettingsAlerts");
+const viewSettingsFaces = document.getElementById("viewSettingsFaces");
+
+function selectSettingsTab(activeTab, activeView) {
+  [tabSettingsWa, tabSettingsAlerts, tabSettingsFaces].forEach((t) => t && t.classList.remove("active"));
+  [viewSettingsWa, viewSettingsAlerts, viewSettingsFaces].forEach((v) => v && (v.style.display = "none"));
+  if (activeTab) activeTab.classList.add("active");
+  if (activeView) activeView.style.display = "flex";
+}
+
+if (tabSettingsWa) {
+  tabSettingsWa.addEventListener("click", () => selectSettingsTab(tabSettingsWa, viewSettingsWa));
+}
+if (tabSettingsAlerts) {
+  tabSettingsAlerts.addEventListener("click", () => selectSettingsTab(tabSettingsAlerts, viewSettingsAlerts));
+}
+if (tabSettingsFaces) {
+  tabSettingsFaces.addEventListener("click", () => selectSettingsTab(tabSettingsFaces, viewSettingsFaces));
+}
+
 
 

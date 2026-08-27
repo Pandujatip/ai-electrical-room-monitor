@@ -1,22 +1,40 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="id">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Imou Electrical Room Monitor</title>
-  <link rel="stylesheet" href="/static/style.css?v=3">
+  <link rel="stylesheet" href="/static/style.css?v=5">
 </head>
 <body>
   <main class="container">
-    <header><h1 id="headerTitle">Imou Electrical Room Monitor</h1><p>Monitoring keselamatan personel secara lokal</p></header>
+    <!-- Header with Action Buttons -->
+    <header class="header-wrap">
+      <div>
+        <h1 id="headerTitle" style="margin: 0 0 4px; font-size: 1.6rem; color: #0f172a;">Imou Electrical Room Monitor</h1>
+        <p style="margin: 0; color: #64748b; font-size: 0.92rem;">Monitoring keselamatan K3 personel secara real-time</p>
+      </div>
+      <div class="header-actions">
+        <button type="button" class="btn-nav" id="btnOpenLogs" title="Buka Log & Riwayat Kejadian">
+          📋 <span>Log Event</span>
+        </button>
+        <button type="button" class="btn-nav btn-nav-primary" id="btnOpenSettings" title="Buka Pengaturan Sistem, WhatsApp & Wajah">
+          ⚙️ <span>Pengaturan</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Top KPI Cards -->
     <section class="cards">
       <div class="card"><span>Koneksi kamera</span><strong id="connection">MEMUAT</strong></div>
       <div class="card"><span>Person terdeteksi</span><strong id="indicator">0</strong></div>
       <div class="card"><span>Durasi terlama</span><strong id="score">0 detik</strong></div>
       <div class="card"><span>Pembaruan terakhir</span><strong id="updated">-</strong></div>
     </section>
+
+    <!-- 1. Live Stream & PTZ Controller -->
     <section class="panel">
-      <h2>Live stream & Kontrol PTZ Kamera</h2>
+      <h2>Live Stream & Kontrol PTZ Kamera</h2>
       <div style="display: flex; gap: 18px; flex-wrap: wrap; align-items: flex-start;">
         <!-- Live Video Area -->
         <div style="flex: 2.2; min-width: 320px;">
@@ -69,11 +87,14 @@
               <span>Kecepatan Putar:</span>
               <strong id="ptzSpeedLabel" style="color: #38bdf8;">5</strong>
             </div>
+            <input type="range" id="ptzSpeed" min="1" max="8" value="5">
+          </div>
+
           <!-- Auto Tracking Switch -->
           <div style="background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 10px 12px; margin-top: 10px; width: 100%; box-sizing: border-box; display: flex; justify-content: space-between; align-items: center;">
             <div>
               <strong style="display: block; font-size: 0.84rem; color: #f8fafc;">🎯 Auto-Tracking AI</strong>
-              <span style="font-size: 0.72rem; color: #94a3b8;">Kamera otomatis ikuti pergerakan orang</span>
+              <span style="font-size: 0.72rem; color: #94a3b8;">Kamera ikuti pergerakan orang</span>
             </div>
             <label class="switch">
               <input type="checkbox" id="toggleAutoTracking">
@@ -85,8 +106,10 @@
         </div>
       </div>
     </section>
+
+    <!-- 2. Status Keselamatan -->
     <section class="panel">
-      <h2>Status keselamatan</h2>
+      <h2>Status Keselamatan</h2>
       <div class="safety-grid">
         <div><span>Kepatuhan PPE</span><strong id="ppe">MEMUAT</strong></div>
         <div><span>Helmet</span><strong id="helmet">-</strong></div>
@@ -96,7 +119,11 @@
         <div><span>Voice Alarm (30s)</span><span style="display: flex; align-items: center; gap: 8px;"><strong id="voiceAlarm" class="green">AKTIF</strong><button id="btnTestVoice" type="button" style="padding: 3px 8px; font-size: 0.75rem; background: #e0f2fe; border: 1px solid #bae6fd; border-radius: 4px; cursor: pointer; color: #0284c7; font-weight: 600;">🔊 Tes Suara</button></span></div>
         <div><span>Waktu inferensi</span><strong id="latency">-</strong></div>
       </div>
-      <h3>Person aktif</h3>
+    </section>
+
+    <!-- 3. Person Aktif -->
+    <section class="panel">
+      <h2>Person Aktif Terdeteksi</h2>
       <div class="table-wrap">
         <table>
           <thead><tr><th>Nama / Identitas</th><th>Track ID</th><th>Confidence</th><th>Durasi</th><th>Helmet</th><th>Vest</th><th>Kondisi Fisik</th><th>Merokok</th></tr></thead>
@@ -104,89 +131,74 @@
         </table>
       </div>
     </section>
-    <section class="panel">
-      <h2>Pendaftaran & Galeri Personel Terdaftar</h2>
-      <div style="display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start;">
-        <div style="flex: 1.2; min-width: 290px; display: flex; flex-direction: column; gap: 12px;">
-          <div>
-            <label for="personName" style="display: block; font-size: 0.85rem; color: #64748b; margin-bottom: 4px; font-weight: 500;">Nama Lengkap / NIK:</label>
-            <input type="text" id="personName" placeholder="Contoh: Budi Santoso - K3" required style="width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.95rem;">
-          </div>
-          
-          <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-            <button type="button" id="btnCaptureCamera" style="flex: 1; min-width: 180px; background: #059669; color: white; border: none; padding: 11px 14px; border-radius: 6px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
-              📸 Ambil Foto Langsung dari Kamera
-            </button>
-            
-            <label style="flex: 1; min-width: 140px; background: #0284c7; color: white; padding: 11px 14px; border-radius: 6px; font-weight: 600; cursor: pointer; text-align: center; display: inline-block;">
-              📁 Upload File Foto
-              <input type="file" id="facePhoto" accept="image/*" style="display: none;">
-            </label>
-          </div>
-          
-          <div id="registerMsg" style="font-size: 0.88rem; font-weight: 500;"></div>
-        </div>
+  </main>
 
-        <div style="flex: 1; min-width: 280px; background: #f8fafc; padding: 14px; border-radius: 8px; border: 1px solid #e2e8f0;">
-          <strong style="font-size: 0.9rem; display: block; margin-bottom: 10px; color: #334155;">Daftar Personel di Database:</strong>
-          <div id="facesList" style="display: flex; flex-wrap: wrap; gap: 6px;">
-            <span style="color: #64748b; font-size: 0.85rem;">Memuat daftar...</span>
-          </div>
-        </div>
+  <!-- ======================================================== -->
+  <!-- FLOATING MODAL 1: SETUP & PENGATURAN                     -->
+  <!-- ======================================================== -->
+  <div class="modal-backdrop" id="modalSettings">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>⚙️ Setup & Pengaturan Sistem</h3>
+        <button class="modal-close" id="btnCloseSettings">&times;</button>
       </div>
-    <section class="panel">
-      <h2>Pengaturan Notifikasi WhatsApp Bot & Suara Alarm</h2>
-      <div style="display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start;">
-        
-        <!-- WhatsApp Pairing Card -->
-        <div style="flex: 1.1; min-width: 300px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-            <strong style="font-size: 1rem; color: #1e293b;">📱 Bot WhatsApp K3</strong>
-            <span id="waStatusBadge" class="unknown" style="font-size: 0.82rem; font-weight: 600; padding: 3px 8px; border-radius: 4px; background: #fef08a;">MEMUAT...</span>
-          </div>
+      <div class="modal-body">
+        <!-- Modal Navigation Tabs -->
+        <div class="modal-tabs">
+          <button class="modal-tab-btn active" id="tabSettingsWa">📱 Bot WhatsApp</button>
+          <button class="modal-tab-btn" id="tabSettingsAlerts">🚨 Saklar & Alarm K3</button>
+          <button class="modal-tab-btn" id="tabSettingsFaces">👥 Database Wajah</button>
+        </div>
 
-          <!-- QR Code Container -->
-          <div id="waQrContainer" style="text-align: center; margin: 12px 0; background: white; padding: 12px; border-radius: 8px; border: 1px dashed #cbd5e1;">
-            <p style="margin: 0 0 8px; font-size: 0.85rem; color: #64748b;">Scan Barcode di bawah ini dari WhatsApp HP:</p>
-            <img id="waQrImg" src="" alt="Memuat Barcode QR..." style="max-width: 210px; display: inline-block; border-radius: 6px; min-height: 180px; background: #f1f5f9;">
-            <p style="margin: 6px 0 0; font-size: 0.78rem; color: #94a3b8;">Buka WA > Perangkat Tertaut > Tautkan Perangkat</p>
-          </div>
-
-          <!-- Connected Info -->
-          <div id="waConnectedContainer" style="display: none; text-align: center; margin: 16px 0; background: #ecfdf5; padding: 16px; border-radius: 8px; border: 1px solid #a7f3d0;">
-            <div style="font-size: 2.2rem; margin-bottom: 4px;">✅</div>
-            <strong style="color: #065f46; display: block; font-size: 0.95rem;">WhatsApp Terhubung Aktif</strong>
-            <span id="waConnectedNumber" style="color: #047857; font-size: 0.85rem; font-weight: 600; display: block; margin-top: 2px;">-</span>
-            <button id="btnWaLogout" type="button" style="margin-top: 10px; background: #ef4444; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 0.8rem; cursor: pointer; font-weight: 600;">Putus Tautan (Ganti Nomor)</button>
-          </div>
-
-          <!-- Target Number Input & Test Button -->
-          <div style="margin-top: 14px;">
-            <label for="waTargetInput" style="display: block; font-size: 0.85rem; color: #475569; margin-bottom: 4px; font-weight: 500;">Kirim Notifikasi ke No HP / Grup:</label>
-            <div style="display: flex; gap: 8px;">
-              <input type="text" id="waTargetInput" placeholder="Contoh: 081234567890 atau ID Grup" style="flex: 1; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.9rem;">
-              <button id="btnSaveTarget" type="button" style="background: #0284c7; color: white; border: none; padding: 8px 14px; border-radius: 6px; font-weight: 600; cursor: pointer;">Simpan</button>
+        <!-- Tab 1: Bot WhatsApp -->
+        <div id="viewSettingsWa">
+          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+              <strong style="font-size: 1rem; color: #1e293b;">Status WhatsApp Server</strong>
+              <span id="waStatusBadge" class="unknown" style="font-size: 0.82rem; font-weight: 600; padding: 3px 8px; border-radius: 4px; background: #fef08a;">MEMUAT...</span>
             </div>
 
-            <!-- Group Dropdown Selector -->
-            <div id="waGroupDropdownWrap" style="margin-top: 8px;">
-              <label for="waGroupSelect" style="display: block; font-size: 0.78rem; color: #64748b; margin-bottom: 2px;">Atau Pilih Grup WhatsApp dari Daftar:</label>
-              <select id="waGroupSelect" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.85rem; background: white;">
-                <option value="">-- Pilih Grup WhatsApp --</option>
-              </select>
+            <!-- QR Code Container -->
+            <div id="waQrContainer" style="text-align: center; margin: 12px 0; background: white; padding: 12px; border-radius: 8px; border: 1px dashed #cbd5e1;">
+              <p style="margin: 0 0 8px; font-size: 0.85rem; color: #64748b;">Scan Barcode di bawah ini dari WhatsApp HP:</p>
+              <img id="waQrImg" src="" alt="Memuat Barcode QR..." style="max-width: 210px; display: inline-block; border-radius: 6px; min-height: 180px; background: #f1f5f9;">
+              <p style="margin: 6px 0 0; font-size: 0.78rem; color: #94a3b8;">Buka WA > Perangkat Tertaut > Tautkan Perangkat</p>
             </div>
 
-            <button id="btnTestWa" type="button" style="width: 100%; margin-top: 10px; background: #25d366; color: white; border: none; padding: 9px 12px; border-radius: 6px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
-              📤 Kirim Pesan & Foto Snapshot Uji Coba
-            </button>
-            <div id="waTestResult" style="font-size: 0.85rem; margin-top: 6px;"></div>
+            <!-- Connected Info -->
+            <div id="waConnectedContainer" style="display: none; text-align: center; margin: 16px 0; background: #ecfdf5; padding: 16px; border-radius: 8px; border: 1px solid #a7f3d0;">
+              <div style="font-size: 2.2rem; margin-bottom: 4px;">✅</div>
+              <strong style="color: #065f46; display: block; font-size: 0.95rem;">WhatsApp Terhubung Aktif</strong>
+              <span id="waConnectedNumber" style="color: #047857; font-size: 0.85rem; font-weight: 600; display: block; margin-top: 2px;">-</span>
+              <button id="btnWaLogout" type="button" style="margin-top: 10px; background: #ef4444; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 0.8rem; cursor: pointer; font-weight: 600;">Putus Tautan (Ganti Nomor)</button>
+            </div>
+
+            <!-- Target Input & Test Button -->
+            <div style="margin-top: 14px;">
+              <label for="waTargetInput" style="display: block; font-size: 0.85rem; color: #475569; margin-bottom: 4px; font-weight: 500;">Kirim Notifikasi ke No HP / Grup:</label>
+              <div style="display: flex; gap: 8px;">
+                <input type="text" id="waTargetInput" placeholder="Contoh: 081234567890 atau ID Grup" style="flex: 1; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.9rem;">
+                <button id="btnSaveTarget" type="button" style="background: #0284c7; color: white; border: none; padding: 8px 14px; border-radius: 6px; font-weight: 600; cursor: pointer;">Simpan</button>
+              </div>
+
+              <!-- Group Dropdown Selector -->
+              <div id="waGroupDropdownWrap" style="margin-top: 8px;">
+                <label for="waGroupSelect" style="display: block; font-size: 0.78rem; color: #64748b; margin-bottom: 2px;">Atau Pilih Grup WhatsApp dari Daftar:</label>
+                <select id="waGroupSelect" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.85rem; background: white;">
+                  <option value="">-- Pilih Grup WhatsApp --</option>
+                </select>
+              </div>
+
+              <button id="btnTestWa" type="button" style="width: 100%; margin-top: 10px; background: #25d366; color: white; border: none; padding: 9px 12px; border-radius: 6px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                📤 Kirim Pesan & Foto Snapshot Uji Coba
+              </button>
+              <div id="waTestResult" style="font-size: 0.85rem; margin-top: 6px;"></div>
+            </div>
           </div>
         </div>
 
-        <!-- System Controls & Switch Toggles -->
-        <div style="flex: 1; min-width: 290px; display: flex; flex-direction: column; gap: 12px;">
-          <strong style="font-size: 1rem; color: #1e293b;">⚙️ Saklar Kontrol Suara & Peringatan</strong>
-
+        <!-- Tab 2: Saklar & Alarm K3 -->
+        <div id="viewSettingsAlerts" style="display: none; flex-direction: column; gap: 12px;">
           <div>
             <label for="cameraNameInput" style="display: block; font-size: 0.85rem; color: #64748b; margin-bottom: 4px; font-weight: 600;">🏷️ Nama Lokasi / Ruang Elektrikal:</label>
             <div style="display: flex; gap: 8px;">
@@ -274,11 +286,71 @@
 
           <div id="settingsSaveStatus" style="font-size: 0.85rem; font-weight: 500;"></div>
         </div>
+
+        <!-- Tab 3: Pendaftaran Wajah -->
+        <div id="viewSettingsFaces" style="display: none; flex-direction: column; gap: 16px;">
+          <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+            <div style="flex: 1.2; min-width: 260px; display: flex; flex-direction: column; gap: 10px;">
+              <div>
+                <label for="personName" style="display: block; font-size: 0.85rem; color: #64748b; margin-bottom: 4px; font-weight: 500;">Nama Lengkap / NIK:</label>
+                <input type="text" id="personName" placeholder="Contoh: Budi Santoso - K3" required style="width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.95rem;">
+              </div>
+              
+              <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <button type="button" id="btnCaptureCamera" style="flex: 1; min-width: 160px; background: #059669; color: white; border: none; padding: 10px 12px; border-radius: 6px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                  📸 Ambil Foto dari CCTV
+                </button>
+                
+                <label style="flex: 1; min-width: 130px; background: #0284c7; color: white; padding: 10px 12px; border-radius: 6px; font-weight: 600; cursor: pointer; text-align: center; display: inline-block;">
+                  📁 Upload File Foto
+                  <input type="file" id="facePhoto" accept="image/*" style="display: none;">
+                </label>
+              </div>
+              
+              <div id="registerMsg" style="font-size: 0.88rem; font-weight: 500;"></div>
+            </div>
+
+            <div style="flex: 1; min-width: 250px; background: #f8fafc; padding: 14px; border-radius: 8px; border: 1px solid #e2e8f0;">
+              <strong style="font-size: 0.9rem; display: block; margin-bottom: 10px; color: #334155;">Daftar Personel Terdaftar:</strong>
+              <div id="facesList" style="display: flex; flex-wrap: wrap; gap: 6px;">
+                <span style="color: #64748b; font-size: 0.85rem;">Memuat daftar...</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-    </section>
-    <section class="panel"><h2>Event terbaru</h2><table><thead><tr><th>Waktu</th><th>Status</th><th>Score</th><th>Pesan</th></tr></thead><tbody id="events"></tbody></table></section>
-    <p class="note">Server hanya memonitor. Tidak ada kontrol langsung ke motor/kontaktor.</p>
-  </main>
-  <script src="/static/app.js?v=4"></script>
+    </div>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- FLOATING MODAL 2: LOG EVENT TERBARU                     -->
+  <!-- ======================================================== -->
+  <div class="modal-backdrop" id="modalLogs">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>📋 Log & Riwayat Kejadian K3</h3>
+        <button class="modal-close" id="btnCloseLogs">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Waktu</th>
+                <th>Status / Tipe Event</th>
+                <th>Score</th>
+                <th>Pesan / Keterangan</th>
+              </tr>
+            </thead>
+            <tbody id="events">
+              <tr><td colspan="4">Memuat log kejadian...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js?v=5"></script>
 </body>
 </html>
