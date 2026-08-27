@@ -12,11 +12,13 @@ from fastapi.staticfiles import StaticFiles
 from config import settings
 from detector import PersonMonitor
 from notifier import notifier
+from ptz import PTZController
 from storage import EventStore
 
 
 store = EventStore(settings.db_path)
 detector = PersonMonitor(settings, store)
+ptz = PTZController(settings.rtsp_url)
 
 
 @asynccontextmanager
@@ -147,6 +149,32 @@ def api_get_settings() -> dict[str, Any]:
 def api_save_settings(data: dict[str, Any] = Body(...)) -> JSONResponse:
     saved = notifier.save_settings(data)
     return JSONResponse(content={"ok": True, "settings": saved})
+
+
+@app.post("/api/ptz/move")
+def api_ptz_move(data: dict[str, Any] = Body(...)) -> JSONResponse:
+    direction = str(data.get("direction", "stop"))
+    speed = int(data.get("speed", 5))
+    res = ptz.move(direction, speed)
+    return JSONResponse(content=res)
+
+
+@app.post("/api/ptz/scan")
+def api_ptz_scan(data: dict[str, Any] = Body(...)) -> JSONResponse:
+    action = str(data.get("action", "start"))
+    res = ptz.continuous_scan_360(action)
+    return JSONResponse(content=res)
+
+
+@app.post("/api/ptz/preset")
+def api_ptz_preset(data: dict[str, Any] = Body(...)) -> JSONResponse:
+    action = str(data.get("action", "goto"))
+    preset_id = int(data.get("preset_id", 1))
+    if action == "set":
+        res = ptz.set_preset(preset_id)
+    else:
+        res = ptz.goto_preset(preset_id)
+    return JSONResponse(content=res)
 
 
 @app.get("/snapshot.jpg")

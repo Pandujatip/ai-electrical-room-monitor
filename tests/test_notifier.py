@@ -19,7 +19,9 @@ class NotifierTests(unittest.TestCase):
             "alert_cooldown_seconds": 60,
         }
 
-    def test_save_and_load_settings(self):
+    @patch("notifier.CONFIG_FILE")
+    def test_save_and_load_settings(self, mock_cfg):
+        mock_cfg.open = MagicMock()
         saved = self.mgr.save_settings({"voice_alarm_enabled": False, "whatsapp_target": "628999999"})
         self.assertFalse(saved["voice_alarm_enabled"])
         self.assertEqual(saved["whatsapp_target"], "628999999")

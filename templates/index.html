@@ -15,7 +15,67 @@
       <div class="card"><span>Durasi terlama</span><strong id="score">0 detik</strong></div>
       <div class="card"><span>Pembaruan terakhir</span><strong id="updated">-</strong></div>
     </section>
-    <section class="panel"><h2>Live stream lokal</h2><img id="snapshot" src="/stream.mjpg" alt="Stream kamera belum tersedia"></section>
+    <section class="panel">
+      <h2>Live stream & Kontrol PTZ Kamera</h2>
+      <div style="display: flex; gap: 18px; flex-wrap: wrap; align-items: flex-start;">
+        <!-- Live Video Area -->
+        <div style="flex: 2.2; min-width: 320px;">
+          <img id="snapshot" src="/stream.mjpg" alt="Stream kamera belum tersedia" style="width: 100%; border-radius: 8px; border: 1px solid #cbd5e1; background: #0f172a; min-height: 280px; object-fit: contain;">
+        </div>
+
+        <!-- PTZ Trackpad & D-Pad Controller Card -->
+        <div class="ptz-container" style="flex: 1; min-width: 260px;">
+          <div class="ptz-title">🎮 KONTROL PTZ KAMERA</div>
+          
+          <!-- Mode Tabs: D-Pad / Trackpad -->
+          <div style="display: flex; gap: 6px; margin-bottom: 12px; width: 100%;">
+            <button id="tabDpad" type="button" style="flex: 1; padding: 6px; font-size: 0.8rem; font-weight: 600; border-radius: 6px; border: none; background: #0284c7; color: white; cursor: pointer;">Tombol D-Pad</button>
+            <button id="tabTrackpad" type="button" style="flex: 1; padding: 6px; font-size: 0.8rem; font-weight: 600; border-radius: 6px; border: none; background: #1e293b; color: #94a3b8; cursor: pointer;">Trackpad Sentuh</button>
+          </div>
+
+          <!-- View 1: 4-Way D-Pad -->
+          <div id="ptzDpadView" style="display: flex; flex-direction: column; align-items: center;">
+            <div class="ptz-dpad">
+              <button class="ptz-btn" id="btnPtzLU" title="Kiri Atas">↖</button>
+              <button class="ptz-btn" id="btnPtzUp" title="Atas (Tilt Up)">⬆️</button>
+              <button class="ptz-btn" id="btnPtzRU" title="Kanan Atas">↗</button>
+              <button class="ptz-btn" id="btnPtzLeft" title="Kiri (Pan Left)">⬅️</button>
+              <button class="ptz-btn ptz-btn-stop" id="btnPtzStop" title="Stop Gerak">STOP</button>
+              <button class="ptz-btn" id="btnPtzRight" title="Kanan (Pan Right)">➡️</button>
+              <button class="ptz-btn" id="btnPtzLD" title="Kiri Bawah">↙</button>
+              <button class="ptz-btn" id="btnPtzDown" title="Bawah (Tilt Down)">⬇️</button>
+              <button class="ptz-btn" id="btnPtzRD" title="Kanan Bawah">↘</button>
+            </div>
+          </div>
+
+          <!-- View 2: Touch / Mouse Trackpad Joystick -->
+          <div id="ptzTrackpadView" style="display: none; flex-direction: column; align-items: center;">
+            <div class="ptz-trackpad" id="ptzTrackpad">
+              <div class="ptz-knob" id="ptzKnob"></div>
+            </div>
+            <span style="font-size: 0.75rem; color: #94a3b8; margin-top: -6px; margin-bottom: 10px;">Sentuh & geser untuk memutar</span>
+          </div>
+
+          <!-- Quick Action Buttons -->
+          <div class="ptz-actions">
+            <button class="ptz-action-btn ptz-btn-scan" id="btnPtzScan" title="Putar Otomatis 360 Derajat">🔄 Putar 360°</button>
+            <button class="ptz-action-btn ptz-btn-preset" id="btnPtzHome" title="Kembali ke Posisi Standar / Pintu">🏠 Home</button>
+            <button class="ptz-action-btn" id="btnPtzSetHome" style="background: #475569; color: white;" title="Simpan Posisi Ini sebagai Home">📍 Simpan</button>
+          </div>
+
+          <!-- Speed Slider -->
+          <div class="ptz-speed-wrap">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+              <span>Kecepatan Putar:</span>
+              <strong id="ptzSpeedLabel" style="color: #38bdf8;">5</strong>
+            </div>
+            <input type="range" id="ptzSpeed" min="1" max="8" value="5">
+          </div>
+
+          <div id="ptzStatusMsg" style="font-size: 0.76rem; margin-top: 8px; color: #94a3b8; text-align: center; min-height: 16px;"></div>
+        </div>
+      </div>
+    </section>
     <section class="panel">
       <h2>Status keselamatan</h2>
       <div class="safety-grid">

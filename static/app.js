@@ -442,8 +442,225 @@ loadWhatsAppGroups();
 
 setInterval(refresh, 1000);
 setInterval(loadFaces, 5000);
-setInterval(loadWhatsAppStatus, 3000);
-setInterval(loadWhatsAppGroups, 10000);
+// ==========================================
+// PTZ CONTROLLER (TRACKPAD & D-PAD)
+// ==========================================
+const tabDpad = document.getElementById("tabDpad");
+const tabTrackpad = document.getElementById("tabTrackpad");
+const ptzDpadView = document.getElementById("ptzDpadView");
+const ptzTrackpadView = document.getElementById("ptzTrackpadView");
+const ptzSpeedInput = document.getElementById("ptzSpeed");
+const ptzSpeedLabel = document.getElementById("ptzSpeedLabel");
+const ptzStatusMsg = document.getElementById("ptzStatusMsg");
+
+if (tabDpad && tabTrackpad) {
+  tabDpad.addEventListener("click", () => {
+    tabDpad.style.background = "#0284c7";
+    tabDpad.style.color = "white";
+    tabTrackpad.style.background = "#1e293b";
+    tabTrackpad.style.color = "#94a3b8";
+    if (ptzDpadView) ptzDpadView.style.display = "flex";
+    if (ptzTrackpadView) ptzTrackpadView.style.display = "none";
+  });
+  tabTrackpad.addEventListener("click", () => {
+    tabTrackpad.style.background = "#0284c7";
+    tabTrackpad.style.color = "white";
+    tabDpad.style.background = "#1e293b";
+    tabDpad.style.color = "#94a3b8";
+    if (ptzTrackpadView) ptzTrackpadView.style.display = "flex";
+    if (ptzDpadView) ptzDpadView.style.display = "none";
+  });
+}
+
+if (ptzSpeedInput) {
+  ptzSpeedInput.addEventListener("input", () => {
+    if (ptzSpeedLabel) ptzSpeedLabel.textContent = ptzSpeedInput.value;
+  });
+}
+
+function getPtzSpeed() {
+  return ptzSpeedInput ? parseInt(ptzSpeedInput.value, 10) : 5;
+}
+
+let activePtzDirection = "stop";
+
+async function sendPtzMove(direction) {
+  if (activePtzDirection === direction && direction !== "stop") return;
+  activePtzDirection = direction;
+  try {
+    if (ptzStatusMsg) {
+      ptzStatusMsg.textContent = direction === "stop" ? "Siap" : `Memutar: ${direction.toUpperCase()}...`;
+    }
+    await fetch("/api/ptz/move", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ direction, speed: getPtzSpeed() }),
+    });
+  } catch (e) {}
+}
+
+// Bind D-Pad Buttons
+const ptzButtons = {
+  btnPtzUp: "up",
+  btnPtzDown: "down",
+  btnPtzLeft: "left",
+  btnPtzRight: "right",
+  btnPtzLU: "leftup",
+  btnPtzRU: "rightup",
+  btnPtzLD: "leftdown",
+  btnPtzRD: "rightdown",
+};
+
+Object.entries(ptzButtons).forEach(([btnId, dir]) => {
+  const btn = document.getElementById(btnId);
+  if (!btn) return;
+  const startHandler = (e) => {
+    e.preventDefault();
+    btn.classList.add("active");
+    sendPtzMove(dir);
+  };
+  const endHandler = (e) => {
+    e.preventDefault();
+    btn.classList.remove("active");
+    sendPtzMove("stop");
+  };
+  btn.addEventListener("mousedown", startHandler);
+  btn.addEventListener("mouseup", endHandler);
+  btn.addEventListener("mouseleave", endHandler);
+  btn.addEventListener("touchstart", startHandler, { passive: false });
+  btn.addEventListener("touchend", endHandler, { passive: false });
+});
+
+const btnPtzStop = document.getElementById("btnPtzStop");
+if (btnPtzStop) {
+  btnPtzStop.addEventListener("click", () => sendPtzMove("stop"));
+}
+
+// 360 Scan & Presets
+let isScanning360 = false;
+const btnPtzScan = document.getElementById("btnPtzScan");
+if (btnPtzScan) {
+  btnPtzScan.addEventListener("click", async () => {
+    isScanning360 = !isScanning360;
+    btnPtzScan.style.background = isScanning360 ? "#ef4444" : "#6366f1";
+    btnPtzScan.textContent = isScanning360 ? "⏹️ Stop 360°" : "🔄 Putar 360°";
+    try {
+      await fetch("/api/ptz/scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: isScanning360 ? "start" : "stop" }),
+      });
+    } catch (e) {}
+  });
+}
+
+const btnPtzHome = document.getElementById("btnPtzHome");
+if (btnPtzHome) {
+  btnPtzHome.addEventListener("click", async () => {
+    if (ptzStatusMsg) ptzStatusMsg.textContent = "Kembali ke posisi Home...";
+    try {
+      await fetch("/api/ptz/preset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "goto", preset_id: 1 }),
+      });
+    } catch (e) {}
+  });
+}
+
+const btnPtzSetHome = document.getElementById("btnPtzSetHome");
+if (btnPtzSetHome) {
+  btnPtzSetHome.addEventListener("click", async () => {
+    if (!confirm("Simpan sudut kamera saat ini sebagai posisi Home / Standar?")) return;
+    try {
+      await fetch("/api/ptz/preset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "set", preset_id: 1 }),
+      });
+      if (ptzStatusMsg) ptzStatusMsg.textContent = "✅ Posisi Home berhasil disimpan!";
+    } catch (e) {}
+  });
+}
+
+// Interactive Virtual Joystick Trackpad
+const trackpad = document.getElementById("ptzTrackpad");
+const knob = document.getElementById("ptzKnob");
+
+if (trackpad && knob) {
+  let isDragging = false;
+  const maxRadius = 55;
+
+  function handleTrackpadMove(clientX, clientY) {
+    const rect = trackpad.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    let dx = clientX - centerX;
+    let dy = clientY - centerY;
+    const distance = Math.hypot(dx, dy);
+
+    if (distance > maxRadius) {
+      dx = (dx / distance) * maxRadius;
+      dy = (dy / distance) * maxRadius;
+    }
+
+    knob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+
+    if (distance < 12) {
+      sendPtzMove("stop");
+      return;
+    }
+
+    // Determine direction from angle
+    const angle = Math.atan2(dy, dx) * (180 / Math.PI); // -180 to 180
+    if (angle >= -22.5 && angle <= 22.5) {
+      sendPtzMove("right");
+    } else if (angle > 22.5 && angle < 67.5) {
+      sendPtzMove("rightdown");
+    } else if (angle >= 67.5 && angle <= 112.5) {
+      sendPtzMove("down");
+    } else if (angle > 112.5 && angle < 157.5) {
+      sendPtzMove("leftdown");
+    } else if (angle >= 157.5 || angle <= -157.5) {
+      sendPtzMove("left");
+    } else if (angle >= -157.5 && angle < -112.5) {
+      sendPtzMove("leftup");
+    } else if (angle >= -112.5 && angle <= -67.5) {
+      sendPtzMove("up");
+    } else if (angle > -67.5 && angle < -22.5) {
+      sendPtzMove("rightup");
+    }
+  }
+
+  function stopTrackpad() {
+    if (!isDragging) return;
+    isDragging = false;
+    knob.style.transform = "translate(-50%, -50%)";
+    sendPtzMove("stop");
+  }
+
+  trackpad.addEventListener("mousedown", (e) => {
+    isDragging = true;
+    handleTrackpadMove(e.clientX, e.clientY);
+  });
+  window.addEventListener("mousemove", (e) => {
+    if (isDragging) handleTrackpadMove(e.clientX, e.clientY);
+  });
+  window.addEventListener("mouseup", stopTrackpad);
+
+  trackpad.addEventListener("touchstart", (e) => {
+    if (e.touches.length > 0) {
+      isDragging = true;
+      handleTrackpadMove(e.touches[0].clientX, e.touches[0].clientY);
+    }
+  }, { passive: true });
+  window.addEventListener("touchmove", (e) => {
+    if (isDragging && e.touches.length > 0) {
+      handleTrackpadMove(e.touches[0].clientX, e.touches[0].clientY);
+    }
+  }, { passive: true });
+  window.addEventListener("touchend", stopTrackpad);
+}
 
 
 
