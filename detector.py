@@ -426,7 +426,7 @@ def analyze_smoking_gesture(
     face_box: tuple[int, int, int, int] | None = None,
     frame: np.ndarray | None = None,
 ) -> tuple[bool, float | None]:
-    """Analyze hand-to-mouth smoking action, cigarette stick, glowing ember, and smoke.
+    """Analyze hand-to-mouth smoking action with strict kinematic validation.
 
     Returns:
         (is_smoking, normalized_distance)
@@ -463,7 +463,6 @@ def analyze_smoking_gesture(
         h_span = float(fw)
 
     if mouth_x is None:
-        # Fallback to upper body center
         mouth_x = px + pw * 0.5
         mouth_y = py + ph * 0.25
         h_span = pw * 0.40
@@ -483,83 +482,41 @@ def analyze_smoking_gesture(
             if w_idx not in valid_kps:
                 continue
             wx, wy = valid_kps[w_idx]
-            if wy > shoulder_y + 5.0:
-                continue
+            
             d_wrist = float(np.hypot(wx - mouth_x, wy - mouth_y))
             norm_wrist = d_wrist / h_span
             if norm_wrist < min_norm_dist:
                 min_norm_dist = norm_wrist
-            if norm_wrist <= 1.20 and wy >= mouth_y - h_span * 0.60 and wy <= mouth_y + h_span * 0.80:
+
+            # Rule 1: Direct wrist near mouth raised above shoulder level
+            if wy <= shoulder_y and norm_wrist <= 1.25 and wy >= mouth_y - h_span * 0.60:
                 is_gesture_smoking = True
                 break
 
+            # Rule 2: Forearm reaching chin (hand near shoulder/chin level)
             if e_idx in valid_kps:
                 ex, ey = valid_kps[e_idx]
-                forearm_vx = wx - ex
-                forearm_vy = wy - ey
-                for factor in [0.25, 0.40, 0.55]:
-                    hx = wx + factor * forearm_vx
-                    hy = wy + factor * forearm_vy
-                    d_hand = float(np.hypot(hx - mouth_x, hy - mouth_y))
-                    norm_hand = d_hand / h_span
-                    if norm_hand < min_norm_dist:
-                        min_norm_dist = norm_hand
-                    if norm_hand <= 0.85 and (hy >= mouth_y - h_span * 0.60) and (hy <= mouth_y + h_span * 0.60):
-                        is_gesture_smoking = True
-                        break
+                vx, vy = wx - ex, wy - ey
+                if ey > wy + 20.0 and (wy <= shoulder_y + 10.0 or (wy <= shoulder_y + 20.0 and norm_wrist <= 1.02)):
+                    for factor in [0.25, 0.40, 0.55]:
+                        hx = wx + factor * vx
+                        hy = wy + factor * vy
+                        if hy <= shoulder_y:
+                            dh = float(np.hypot(hx - mouth_x, hy - mouth_y)) / h_span
+                            if dh < min_norm_dist:
+                                min_norm_dist = dh
+                            if dh <= 0.65 and ((w_idx == KP_RIGHT_WRIST and wx <= mouth_x + 30.0) or (w_idx == KP_LEFT_WRIST and wx >= mouth_x - 30.0)):
+                                is_gesture_smoking = True
+                                break
             if is_gesture_smoking:
                 break
 
-    # 3. Vision Analysis for Cigarette Stick & Glowing Ember (Rokok Batang)
-    has_ember = False
-    has_stick = False
-    has_smoke = False
-    ember_px_count = 0
+        dist_val = float(min_norm_dist) if min_norm_dist < 900.0 else None
+        return is_gesture_smoking, dist_val
 
-    if frame is not None:
-        fh_img, fw_img = frame.shape[:2]
-        y1 = max(0, int(mouth_y - h_span * 0.40))
-        y2 = min(fh_img, int(mouth_y + h_span * 0.70))
-        x1 = max(0, int(mouth_x - h_span * 0.70))
-        x2 = min(fw_img, int(mouth_x + h_span * 0.70))
-
-        if y2 > y1 + 5 and x2 > x1 + 5:
-            mouth_roi = frame[y1:y2, x1:x2]
-
-            # A. Deteksi Bara Api Rokok (Glowing Red/Orange Ember Hotspot)
-            hsv = cv2.cvtColor(mouth_roi, cv2.COLOR_BGR2HSV)
-            mask_ember = cv2.bitwise_or(
-                cv2.inRange(hsv, np.array([0, 40, 110]), np.array([22, 255, 255])),
-                cv2.inRange(hsv, np.array([160, 40, 110]), np.array([180, 255, 255]))
-            )
-            ember_px_count = cv2.countNonZero(mask_ember)
-            if ember_px_count >= 25:
-                has_ember = True
-
-            # B. Deteksi Batang Rokok Putih & Asap (Edge lines & Stick contour)
-            gray = cv2.cvtColor(mouth_roi, cv2.COLOR_BGR2GRAY)
-            _, mask_white = cv2.threshold(gray, 175, 255, cv2.THRESH_BINARY)
-            stick_px = cv2.countNonZero(mask_white)
-            if stick_px >= 20:
-                has_stick = True
-
-            edges = cv2.Canny(gray, 30, 110)
-            lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=10, minLineLength=6, maxLineGap=4)
-            if lines is not None and len(lines) >= 3:
-                has_smoke = True
-
-    # Final Decision for Cigarette Smoking (Rokok Batang):
-    if is_gesture_smoking:
-        final_smoking = True
-    elif has_ember and (has_stick or has_smoke or ember_px_count >= 60):
-        final_smoking = True
-    elif has_ember and min_norm_dist <= 1.5:
-        final_smoking = True
-    else:
-        final_smoking = False
-
-    dist_val = float(min_norm_dist) if min_norm_dist < 900.0 else None
-    return final_smoking, dist_val
+    # 3. If NO keypoints at all (pure face detection fallback)
+    # Require hand presence in front of mouth with glowing hotspot
+    return False, None
 
 
 class PersonMonitor:
@@ -654,6 +611,14 @@ class PersonMonitor:
                 self._ppe_model_v8n = None
         except Exception:
             self._ppe_model_v8n = None
+        try:
+            pose_path = self._resolve_model_path("models/yolo11n-pose.pt")
+            if pose_path.exists():
+                self._pose_model = YOLO(str(pose_path))
+            else:
+                self._pose_model = None
+        except Exception:
+            self._pose_model = None
         if self._detector_errors:
             self._status["last_error"] = "; ".join(self._detector_errors)
         if self._person_model is None:
@@ -916,6 +881,40 @@ class PersonMonitor:
                     "confidence": float(confidence),
                     "keypoints": kps_list[idx] if has_kps else None,
                 })
+
+        # If person model detections lack keypoints and pose model is available, predict pose
+        if getattr(self, "_pose_model", None) is not None and any(d["keypoints"] is None for d in detections):
+            try:
+                pose_res = self._pose_model.predict(
+                    source=frame,
+                    conf=self.settings.yolo_confidence,
+                    iou=self.settings.yolo_iou,
+                    imgsz=self.settings.yolo_imgsz,
+                    device=self.settings.yolo_device,
+                    classes=[0],
+                    verbose=False,
+                )
+                if pose_res and pose_res[0].keypoints is not None and hasattr(pose_res[0].keypoints, "data"):
+                    pose_kps = pose_res[0].keypoints.data.cpu().numpy()
+                    pose_boxes = pose_res[0].boxes.xyxy.cpu().numpy() if pose_res[0].boxes is not None else []
+                    for d in detections:
+                        if d["keypoints"] is None:
+                            dx, dy, dw, dh = d["box"]
+                            d_center = (dx + dw / 2.0, dy + dh / 2.0)
+                            best_idx = None
+                            min_dist = 99999.0
+                            for p_idx, p_box in enumerate(pose_boxes):
+                                px1, py1, px2, py2 = p_box
+                                p_center = ((px1 + px2) / 2.0, (py1 + py2) / 2.0)
+                                dist = float(np.hypot(d_center[0] - p_center[0], d_center[1] - p_center[1]))
+                                if dist < min_dist and dist <= max(dw, dh) * 1.2:
+                                    min_dist = dist
+                                    best_idx = p_idx
+                            if best_idx is not None and best_idx < len(pose_kps):
+                                d["keypoints"] = pose_kps[best_idx]
+            except Exception:
+                pass
+
         return suppress_duplicate_people(detections, self.settings.person_duplicate_overlap)
 
     def _detect_ppe(self, frame: np.ndarray) -> list[dict[str, Any]]:
