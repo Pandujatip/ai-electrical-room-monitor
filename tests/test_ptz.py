@@ -13,46 +13,43 @@ class PTZControllerTests(unittest.TestCase):
         self.assertEqual(self.ptz.password, "ELINSRM34")
         self.assertEqual(self.ptz.port, 80)
 
-    @patch("requests.get")
-    def test_move_left(self, mock_get):
+    @patch("requests.Session.post")
+    def test_move_left(self, mock_post):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        mock_resp.text = "OK\r\n"
-        mock_get.return_value = mock_resp
+        mock_post.return_value = mock_resp
 
         res = self.ptz.move("left", speed=5)
         self.assertTrue(res["ok"])
-        mock_get.assert_called_once()
-        args, kwargs = mock_get.call_args
-        self.assertEqual(kwargs["params"]["code"], "Left")
-        self.assertEqual(kwargs["params"]["action"], "start")
-        self.assertEqual(kwargs["params"]["arg1"], 5)
+        mock_post.assert_called_once()
+        args, kwargs = mock_post.call_args
+        self.assertIn("ContinuousMove", kwargs["data"])
+        self.assertIn('PanTilt x="-0.62"', kwargs["data"])
 
-    @patch("requests.get")
-    def test_continuous_scan_360(self, mock_get):
+    @patch("requests.Session.post")
+    def test_continuous_scan_360(self, mock_post):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        mock_resp.text = "OK\r\n"
-        mock_get.return_value = mock_resp
+        mock_post.return_value = mock_resp
 
         res = self.ptz.continuous_scan_360("start")
         self.assertTrue(res["ok"])
-        args, kwargs = mock_get.call_args
-        self.assertEqual(kwargs["params"]["code"], "AutoScan")
-        self.assertEqual(kwargs["params"]["action"], "start")
+        mock_post.assert_called_once()
+        args, kwargs = mock_post.call_args
+        self.assertIn("ContinuousMove", kwargs["data"])
 
-    @patch("requests.get")
-    def test_goto_preset(self, mock_get):
+    @patch("requests.Session.post")
+    def test_goto_preset(self, mock_post):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        mock_resp.text = "OK\r\n"
-        mock_get.return_value = mock_resp
+        mock_post.return_value = mock_resp
 
         res = self.ptz.goto_preset(1)
         self.assertTrue(res["ok"])
-        args, kwargs = mock_get.call_args
-        self.assertEqual(kwargs["params"]["code"], "GotoPreset")
-        self.assertEqual(kwargs["params"]["arg2"], 1)
+        mock_post.assert_called_once()
+        args, kwargs = mock_post.call_args
+        self.assertIn("GotoPreset", kwargs["data"])
+        self.assertIn("<tptz:PresetToken>1</tptz:PresetToken>", kwargs["data"])
 
     def test_auto_tracking_deadzone_and_direction(self):
         w = 640
