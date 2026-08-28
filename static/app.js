@@ -290,7 +290,9 @@ async function loadSettings() {
     const toggleWaCameraOffline = document.getElementById("toggleWaCameraOffline");
     if (toggleWaCameraOffline) toggleWaCameraOffline.checked = data.alert_camera_offline_enabled !== false;
     const toggleAutoTracking = document.getElementById("toggleAutoTracking");
-    if (toggleAutoTracking) toggleAutoTracking.checked = data.auto_tracking_enabled === true;
+    if (toggleAutoTracking) toggleAutoTracking.checked = data.auto_tracking_enabled !== false;
+    const toggleHourlyPatrol = document.getElementById("toggleHourlyPatrol");
+    if (toggleHourlyPatrol) toggleHourlyPatrol.checked = data.hourly_patrol_enabled !== false;
     const cooldownSelect = document.getElementById("cooldownSelect");
     if (cooldownSelect && data.alert_cooldown_seconds) {
       cooldownSelect.value = String(data.alert_cooldown_seconds);
@@ -449,6 +451,12 @@ const toggleAutoTracking = document.getElementById("toggleAutoTracking");
 if (toggleAutoTracking) {
   toggleAutoTracking.addEventListener("change", () => {
     saveSettings({ auto_tracking_enabled: toggleAutoTracking.checked });
+  });
+}
+const toggleHourlyPatrol = document.getElementById("toggleHourlyPatrol");
+if (toggleHourlyPatrol) {
+  toggleHourlyPatrol.addEventListener("change", () => {
+    saveSettings({ hourly_patrol_enabled: toggleHourlyPatrol.checked });
   });
 }
 

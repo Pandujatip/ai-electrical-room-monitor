@@ -38,9 +38,11 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "alert_er_activity_seconds": 300,  # 5 menit
     "alert_camera_offline_enabled": True,
     "alert_cooldown_seconds": 3600,  # 1 jam (3600s) per orang agar tidak spam
-    "auto_tracking_enabled": False,
+    "auto_tracking_enabled": True,
     "auto_tracking_speed": 4,
     "auto_tracking_return_home": True,
+    "hourly_patrol_enabled": True,
+    "hourly_patrol_interval_seconds": 3600,  # 1 jam sekali (3600 detik)
 }
 
 

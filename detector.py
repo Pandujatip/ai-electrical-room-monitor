@@ -703,6 +703,10 @@ class PersonMonitor:
         self._auto_track_last_seen: float = 0.0
         self._last_auto_track_time: float = 0.0
         self._last_auto_track_dir: str = "stop"
+        self._is_patrolling: bool = False
+        self._patrol_start_time: float = 0.0
+        self._last_patrol_time: float = time.time()
+        self._at_home_position: bool = True
 
     def _load_models(self) -> None:
         if YOLO is None:
@@ -923,73 +927,120 @@ class PersonMonitor:
                 logger.error("AI inference worker error: %s", exc)
 
     def _process_auto_tracking(self, frame_shape: tuple[int, ...]) -> None:
-        """Closed-loop AI Auto-Tracking for PTZ camera following persons with proportional speed."""
-        if not notifier.settings.get("auto_tracking_enabled", False):
-            return
-
+        """Closed-loop AI Auto-Tracking with Smart Patrol, Auto Hold, and Hourly Tour."""
         now = time.time()
-        # Rate limit PTZ updates to at most once every 0.12s for fast responsive tracking
-        if now - self._last_auto_track_time < 0.12:
-            return
-
-        h, w = frame_shape[:2]
-        center_x = w / 2.0
-        deadzone = w * 0.08  # ±8% responsive deadzone around screen center
-
         active_tracks = [t for t in self._tracks.values() if not t.get("lost", False)]
+        auto_track_enabled = notifier.settings.get("auto_tracking_enabled", True)
+        return_home_enabled = notifier.settings.get("auto_tracking_return_home", True)
+        patrol_interval = float(notifier.settings.get("hourly_patrol_interval_seconds", 3600))  # 1 jam (3600s)
 
-        if not active_tracks:
+        # ---------------------------------------------------------------------
+        # 1. KETIKA TERDETEKSI ADA ORANG (ACTIVE TRACKS)
+        # ---------------------------------------------------------------------
+        if active_tracks:
+            # Jika kamera sedang berputar / patroli -> LANGSUNG STOP & AUTO HOLD POSITION
+            if self._is_patrolling:
+                self.ptz.move("stop", async_call=True)
+                self._is_patrolling = False
+                self._last_auto_track_dir = "stop"
+                self._last_auto_track_time = now
+                logger.info("Person detected during patrol! Auto holding position.")
+
+            self._auto_track_last_seen = now
+            self._at_home_position = False
+
+            if not auto_track_enabled:
+                return
+
+            # Rate limit update PTZ setiap 0.12s
+            if now - self._last_auto_track_time < 0.12:
+                return
+
+            h, w = frame_shape[:2]
+            center_x = w / 2.0
+            deadzone = w * 0.08  # ±8% deadzone di tengah layar
+
+            # Pertahankan kunci target pada orang utama
+            primary = None
             if self._auto_track_locked_id is not None:
-                self._auto_track_locked_id = None
-                self._auto_track_last_seen = now
+                primary = next((t for t in active_tracks if t.get("id") == self._auto_track_locked_id), None)
+
+            if primary is None:
+                primary = active_tracks[0]
+                self._auto_track_locked_id = primary.get("id")
+
+            box = primary.get("box", [0, 0, 0, 0])
+            bx, by, bw, bh = box
+            target_cx = float(bx + (bw / 2.0))
+
+            offset_x = target_cx - center_x
+            norm_offset = abs(offset_x) / max(1.0, center_x)
+            speed = max(3, min(8, int(norm_offset * 10)))
+
+            if abs(offset_x) <= deadzone:
+                # Orang berada di tengah / diam -> HOLD POSITION (Kamera Diam)
                 if self._last_auto_track_dir != "stop":
                     self.ptz.move("stop", async_call=True)
                     self._last_auto_track_dir = "stop"
                     self._last_auto_track_time = now
-            elif notifier.settings.get("auto_tracking_return_home", True):
-                if self._auto_track_last_seen > 0 and (now - self._auto_track_last_seen) > 15.0:
-                    self.ptz.goto_preset(1)
-                    self._auto_track_last_seen = 0.0
+            elif offset_x < -deadzone:
+                # Orang berjalan ke kiri -> Kamera ikuti ke Kiri
+                if self._last_auto_track_dir != "left":
+                    self.ptz.move("left", speed=speed, async_call=True)
+                    self._last_auto_track_dir = "left"
+                    self._last_auto_track_time = now
+            elif offset_x > deadzone:
+                # Orang berjalan ke kanan -> Kamera ikuti ke Kanan
+                if self._last_auto_track_dir != "right":
+                    self.ptz.move("right", speed=speed, async_call=True)
+                    self._last_auto_track_dir = "right"
+                    self._last_auto_track_time = now
             return
 
-        self._auto_track_last_seen = now
+        # ---------------------------------------------------------------------
+        # 2. KETIKA TIDAK ADA ORANG (RUANGAN KOSONG)
+        # ---------------------------------------------------------------------
+        self._auto_track_locked_id = None
 
-        # Maintain target lock on primary person or pick first active track
-        primary = None
-        if self._auto_track_locked_id is not None:
-            primary = next((t for t in active_tracks if t.get("id") == self._auto_track_locked_id), None)
+        # 2a. Hentikan sisa gerakan auto-tracking jika target baru saja hilang
+        if not self._is_patrolling and self._last_auto_track_dir != "stop":
+            self.ptz.move("stop", async_call=True)
+            self._last_auto_track_dir = "stop"
+            self._last_auto_track_time = now
 
-        if primary is None:
-            primary = active_tracks[0]
-            self._auto_track_locked_id = primary.get("id")
-
-        box = primary.get("box", [0, 0, 0, 0])
-        # Note: box is (bx, by, bw, bh)
-        bx, by, bw, bh = box
-        target_cx = float(bx + (bw / 2.0))
-
-        offset_x = target_cx - center_x
-        # Adaptive speed: larger distance from center -> higher speed (3 to 8)
-        norm_offset = abs(offset_x) / max(1.0, center_x)
-        speed = max(3, min(8, int(norm_offset * 10)))
-
-        if abs(offset_x) <= deadzone:
-            if self._last_auto_track_dir != "stop":
+        # 2b. Jika sedang dalam sesi patroli 360: periksa durasi 1 putaran penuh (18 detik)
+        if self._is_patrolling:
+            if (now - self._patrol_start_time) > 18.0:
+                # 1 putaran selesai dan tidak ada orang -> STOP dan kembali ke Home
                 self.ptz.move("stop", async_call=True)
+                self._is_patrolling = False
                 self._last_auto_track_dir = "stop"
-                self._last_auto_track_time = now
-        elif offset_x < -deadzone:
-            # Person is on the left side of screen -> Pan Left towards person
-            if self._last_auto_track_dir != "left":
-                self.ptz.move("left", speed=speed, async_call=True)
-                self._last_auto_track_dir = "left"
-                self._last_auto_track_time = now
-        elif offset_x > deadzone:
-            # Person is on the right side of screen -> Pan Right towards person
-            if self._last_auto_track_dir != "right":
-                self.ptz.move("right", speed=speed, async_call=True)
-                self._last_auto_track_dir = "right"
-                self._last_auto_track_time = now
+                self._last_patrol_time = now
+                if return_home_enabled:
+                    self.ptz.goto_preset(1)
+                    self._at_home_position = True
+                logger.info("1 full patrol 360 completed with no person detected. Holding at Home position.")
+            return
+
+        # 2c. Kembali ke posisi HOME jika orang sudah keluar ruangan (> 10 detik)
+        if return_home_enabled and not self._at_home_position:
+            if self._auto_track_last_seen > 0 and (now - self._auto_track_last_seen) > 10.0:
+                self.ptz.goto_preset(1)
+                self._at_home_position = True
+                self._auto_track_last_seen = 0.0
+                self._last_patrol_time = now
+                logger.info("Room empty for 10s. Returned to Home preset and holding position.")
+            return
+
+        # 2d. Patroli Otomatis 1 Jam Sekali (Hourly Patrol 360 Tour)
+        hourly_patrol_enabled = notifier.settings.get("hourly_patrol_enabled", True)
+        if hourly_patrol_enabled and self._at_home_position:
+            if (now - self._last_patrol_time) >= patrol_interval:
+                logger.info("Starting scheduled hourly 360 patrol scan...")
+                self._is_patrolling = True
+                self._patrol_start_time = now
+                self._last_patrol_time = now
+                self.ptz.continuous_scan_360("start")
 
     def _read_latest_frames(
         self,

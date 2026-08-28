@@ -155,14 +155,23 @@ def api_save_settings(data: dict[str, Any] = Body(...)) -> JSONResponse:
 def api_ptz_move(data: dict[str, Any] = Body(...)) -> JSONResponse:
     direction = str(data.get("direction", "stop"))
     speed = int(data.get("speed", 5))
+    if direction == "stop":
+        detector._is_patrolling = False
     res = ptz.move(direction, speed)
     return JSONResponse(content=res)
 
 
 @app.post("/api/ptz/scan")
 def api_ptz_scan(data: dict[str, Any] = Body(...)) -> JSONResponse:
+    import time
     action = str(data.get("action", "start"))
-    res = ptz.continuous_scan_360(action)
+    if action == "start":
+        detector._is_patrolling = True
+        detector._patrol_start_time = time.time()
+        res = ptz.continuous_scan_360("start")
+    else:
+        detector._is_patrolling = False
+        res = ptz.move("stop")
     return JSONResponse(content=res)
 
 

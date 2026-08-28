@@ -93,11 +93,23 @@
           <!-- Auto Tracking Switch -->
           <div style="background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 10px 12px; margin-top: 10px; width: 100%; box-sizing: border-box; display: flex; justify-content: space-between; align-items: center;">
             <div>
-              <strong style="display: block; font-size: 0.84rem; color: #f8fafc;">🎯 Auto-Tracking AI</strong>
-              <span style="font-size: 0.72rem; color: #94a3b8;">Kamera ikuti pergerakan orang</span>
+              <strong style="display: block; font-size: 0.84rem; color: #f8fafc;">🎯 Auto-Tracking & Hold AI</strong>
+              <span style="font-size: 0.72rem; color: #94a3b8;">Ikuti orang bergerak, diam saat orang diam</span>
             </div>
             <label class="switch">
-              <input type="checkbox" id="toggleAutoTracking">
+              <input type="checkbox" id="toggleAutoTracking" checked>
+              <span class="slider round"></span>
+            </label>
+          </div>
+
+          <!-- Hourly Patrol Switch -->
+          <div style="background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 10px 12px; margin-top: 8px; width: 100%; box-sizing: border-box; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <strong style="display: block; font-size: 0.84rem; color: #f8fafc;">🔄 Patroli 360° Rutin (1 Jam Sekali)</strong>
+              <span style="font-size: 0.72rem; color: #94a3b8;">Scan otomatis saat kosong, stop jika ada orang</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="toggleHourlyPatrol" checked>
               <span class="slider round"></span>
             </label>
           </div>
