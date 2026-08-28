@@ -81,7 +81,7 @@ class PTZController:
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
-    def move(self, direction: str, speed: int = 5) -> dict[str, Any]:
+    def move(self, direction: str, speed: int = 5, async_call: bool = False) -> dict[str, Any]:
         """Move camera: 'up', 'down', 'left', 'right', diagonals, or 'stop'."""
         d = direction.strip().lower()
         if d == "stop":
@@ -92,6 +92,10 @@ class PTZController:
                 f'<tptz:Zoom>true</tptz:Zoom>'
                 f'</tptz:Stop>'
             )
+            if async_call:
+                import threading
+                threading.Thread(target=self._send_soap, args=("ptz_service", body, 1.5), daemon=True).start()
+                return {"ok": True}
             return self._send_soap("ptz_service", body)
 
         # Scale speed 1..8 to float 0.15 .. 1.0
@@ -120,6 +124,10 @@ class PTZController:
             f'</tptz:Velocity>'
             f'</tptz:ContinuousMove>'
         )
+        if async_call:
+            import threading
+            threading.Thread(target=self._send_soap, args=("ptz_service", body, 1.5), daemon=True).start()
+            return {"ok": True}
         return self._send_soap("ptz_service", body)
 
     def continuous_scan_360(self, action: str = "start") -> dict[str, Any]:

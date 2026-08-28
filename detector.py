@@ -923,18 +923,18 @@ class PersonMonitor:
                 logger.error("AI inference worker error: %s", exc)
 
     def _process_auto_tracking(self, frame_shape: tuple[int, ...]) -> None:
-        """Closed-loop AI Auto-Tracking for PTZ camera following persons."""
+        """Closed-loop AI Auto-Tracking for PTZ camera following persons with proportional speed."""
         if not notifier.settings.get("auto_tracking_enabled", False):
             return
 
         now = time.time()
-        # Rate limit PTZ updates to at most once every 0.25s
-        if now - self._last_auto_track_time < 0.25:
+        # Rate limit PTZ updates to at most once every 0.12s for fast responsive tracking
+        if now - self._last_auto_track_time < 0.12:
             return
 
         h, w = frame_shape[:2]
         center_x = w / 2.0
-        deadzone = w * 0.18  # ±18% of screen center
+        deadzone = w * 0.08  # ±8% responsive deadzone around screen center
 
         active_tracks = [t for t in self._tracks.values() if not t.get("lost", False)]
 
@@ -943,7 +943,7 @@ class PersonMonitor:
                 self._auto_track_locked_id = None
                 self._auto_track_last_seen = now
                 if self._last_auto_track_dir != "stop":
-                    self.ptz.move("stop")
+                    self.ptz.move("stop", async_call=True)
                     self._last_auto_track_dir = "stop"
                     self._last_auto_track_time = now
             elif notifier.settings.get("auto_tracking_return_home", True):
@@ -964,28 +964,31 @@ class PersonMonitor:
             self._auto_track_locked_id = primary.get("id")
 
         box = primary.get("box", [0, 0, 0, 0])
-        x1, y1, x2, y2 = box
-        target_cx = (x1 + x2) / 2.0
+        # Note: box is (bx, by, bw, bh)
+        bx, by, bw, bh = box
+        target_cx = float(bx + (bw / 2.0))
 
         offset_x = target_cx - center_x
-        speed = int(notifier.settings.get("auto_tracking_speed", 4))
+        # Adaptive speed: larger distance from center -> higher speed (3 to 8)
+        norm_offset = abs(offset_x) / max(1.0, center_x)
+        speed = max(3, min(8, int(norm_offset * 10)))
 
         if abs(offset_x) <= deadzone:
             if self._last_auto_track_dir != "stop":
-                self.ptz.move("stop")
+                self.ptz.move("stop", async_call=True)
                 self._last_auto_track_dir = "stop"
                 self._last_auto_track_time = now
         elif offset_x < -deadzone:
-            # Person is on the left side of screen -> Pan towards person
-            if self._last_auto_track_dir != "right":
-                self.ptz.move("right", speed=speed)
-                self._last_auto_track_dir = "right"
+            # Person is on the left side of screen -> Pan Left towards person
+            if self._last_auto_track_dir != "left":
+                self.ptz.move("left", speed=speed, async_call=True)
+                self._last_auto_track_dir = "left"
                 self._last_auto_track_time = now
         elif offset_x > deadzone:
-            # Person is on the right side of screen -> Pan towards person
-            if self._last_auto_track_dir != "left":
-                self.ptz.move("left", speed=speed)
-                self._last_auto_track_dir = "left"
+            # Person is on the right side of screen -> Pan Right towards person
+            if self._last_auto_track_dir != "right":
+                self.ptz.move("right", speed=speed, async_call=True)
+                self._last_auto_track_dir = "right"
                 self._last_auto_track_time = now
 
     def _read_latest_frames(
