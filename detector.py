@@ -1218,9 +1218,65 @@ class PersonMonitor:
                             "confidence": float(conf),
                         }
                     )
+
+            # Detect small localized flames (cigarette lighters / matches)
+            small_flames = self._detect_small_flames(frame, person_boxes)
+            detections.extend(small_flames)
+
         except Exception as exc:
             logger.error("Fire/smoke inference error: %s", exc)
         return detections
+
+    def _detect_small_flames(
+        self,
+        frame: np.ndarray,
+        person_boxes: list[tuple[int, int, int, int]],
+    ) -> list[dict[str, Any]]:
+        """Detect small localized lighter and match flames near active persons."""
+        h_img, w_img = frame.shape[:2]
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        v = hsv[:, :, 2]
+        b, g, r_ch = cv2.split(frame)
+
+        # Lighter flame core: intense luminance V >= 245 with warm tint (R >= 225, G >= 180, R >= B)
+        flame_mask = (v >= 245) & (r_ch >= 225) & (g >= 180) & (r_ch >= b)
+        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(flame_mask.astype(np.uint8))
+
+        flames: list[dict[str, Any]] = []
+        for i in range(1, num_labels):
+            x, y, w, h_box, area = stats[i]
+            if area < 3 or area > 350 or w > 35 or h_box > 40:
+                continue
+
+            # Check if this candidate is near a person (within 50px of any person bounding box)
+            if person_boxes:
+                near_person = False
+                for px, py, pw, ph in person_boxes:
+                    if (px - 50 <= x <= px + pw + 50) and (py - 50 <= y <= py + ph + 50):
+                        near_person = True
+                        break
+                if not near_person:
+                    continue
+
+            pad = 8
+            bx = max(0, x - pad)
+            by = max(0, y - pad)
+            bw = min(w_img - bx, w + pad * 2)
+            bh = min(h_img - by, h_box + pad * 2)
+
+            roi_v = v[by : by + bh, bx : bx + bw]
+            bg_mean = np.mean(roi_v[roi_v < 235]) if np.any(roi_v < 235) else 0
+            contrast = np.max(roi_v) - bg_mean
+
+            if contrast >= 25:
+                flames.append(
+                    {
+                        "box": (int(bx), int(by), int(bw), int(bh)),
+                        "label": "fire",
+                        "confidence": min(0.95, float(0.70 + (contrast / 100.0) * 0.25)),
+                    }
+                )
+        return flames
 
     def _update_fire_states(self, fire_detections: list[dict[str, Any]], frame: np.ndarray | None = None) -> None:
         now = time.monotonic()
