@@ -193,10 +193,14 @@ class NotificationManager:
 
         now = time.time()
         cooldown = float(self.settings.get("alert_cooldown_seconds", 3600))
+        min_emergency_cooldown = 20.0  # at least 20s between emergency alerts to avoid WhatsApp rate-limit (429)
 
         with self._lock:
             last_sent = self._last_alert_times.get(alert_key, 0.0)
-            if not force and (now - last_sent < cooldown):
+            if force:
+                if now - last_sent < min_emergency_cooldown:
+                    return False
+            elif (now - last_sent < cooldown):
                 return False
             self._last_alert_times[alert_key] = now
             self._save_cooldowns()

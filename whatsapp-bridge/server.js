@@ -203,3 +203,12 @@ app.listen(PORT, '127.0.0.1', () => {
   console.log(`WhatsApp Bridge running on http://127.0.0.1:${PORT}`);
   initWhatsApp();
 });
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[WhatsApp] Unhandled Rejection caught:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('[WhatsApp] Uncaught Exception caught:', err);
+});
+
