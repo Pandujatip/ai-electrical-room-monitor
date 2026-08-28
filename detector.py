@@ -976,16 +976,16 @@ class PersonMonitor:
                 self._last_auto_track_dir = "stop"
                 self._last_auto_track_time = now
         elif offset_x < -deadzone:
-            # Person is on the left -> Pan Left
-            if self._last_auto_track_dir != "left":
-                self.ptz.move("left", speed=speed)
-                self._last_auto_track_dir = "left"
-                self._last_auto_track_time = now
-        elif offset_x > deadzone:
-            # Person is on the right -> Pan Right
+            # Person is on the left side of screen -> Pan towards person
             if self._last_auto_track_dir != "right":
                 self.ptz.move("right", speed=speed)
                 self._last_auto_track_dir = "right"
+                self._last_auto_track_time = now
+        elif offset_x > deadzone:
+            # Person is on the right side of screen -> Pan towards person
+            if self._last_auto_track_dir != "left":
+                self.ptz.move("left", speed=speed)
+                self._last_auto_track_dir = "left"
                 self._last_auto_track_time = now
 
     def _read_latest_frames(
