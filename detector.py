@@ -909,7 +909,7 @@ class PersonMonitor:
                     getattr(self, "_fire_model", None) is not None
                     and self._person_inference_count % getattr(self.settings, "fire_process_interval", 2) == 0
                 ):
-                    self._latest_fire = self._detect_fire_and_smoke(frame)
+                    self._latest_fire = self._detect_fire_and_smoke(frame, people=people, ppe=self._latest_ppe)
                     self._update_fire_states(self._latest_fire, frame=frame)
 
                 # 4. Update track states
@@ -1138,7 +1138,12 @@ class PersonMonitor:
                     )
         return detections
 
-    def _detect_fire_and_smoke(self, frame: np.ndarray) -> list[dict[str, Any]]:
+    def _detect_fire_and_smoke(
+        self,
+        frame: np.ndarray,
+        people: list[dict[str, Any]] | None = None,
+        ppe: list[dict[str, Any]] | None = None,
+    ) -> list[dict[str, Any]]:
         if not getattr(self.settings, "fire_detection_enabled", True):
             return []
         if getattr(self, "_fire_model", None) is None:
@@ -1155,6 +1160,22 @@ class PersonMonitor:
                 verbose=False,
             )
             names = self._fire_model.names
+
+            # Collect person & vest bounding boxes to prevent orange clothing false alarms
+            person_boxes: list[tuple[int, int, int, int]] = []
+            if people:
+                for p in people:
+                    if "box" in p:
+                        person_boxes.append(p["box"])
+            if ppe:
+                for item in ppe:
+                    if item.get("label") in ("vest_ok", "vest_missing", "Safety Vest"):
+                        person_boxes.append(item["box"])
+            with self._lock:
+                for t in self._tracks.values():
+                    if not t.get("lost") and "box" in t:
+                        person_boxes.append(t["box"])
+
             for result in results:
                 if result.boxes is None:
                     continue
@@ -1170,6 +1191,26 @@ class PersonMonitor:
                         continue
                     x1, y1, x2, y2 = xyxy.tolist()
                     box = (x1, y1, x2 - x1, y2 - y1)
+
+                    # Anti-False-Alarm: If "fire" candidate is located directly on a person's body/vest,
+                    # it is high-vis orange/yellow work clothing (wearpack/vest), not an environmental fire
+                    if label == "fire" and person_boxes:
+                        fx, fy, fw, fh = box
+                        f_area = max(1, fw * fh)
+                        is_on_person = False
+                        for px, py, pw, ph in person_boxes:
+                            ix1 = max(fx, px)
+                            iy1 = max(fy, py)
+                            ix2 = min(fx + fw, px + pw)
+                            iy2 = min(fy + fh, py + ph)
+                            if ix2 > ix1 and iy2 > iy1:
+                                overlap_ratio = ((ix2 - ix1) * (iy2 - iy1)) / f_area
+                                if overlap_ratio > 0.35:
+                                    is_on_person = True
+                                    break
+                        if is_on_person and float(conf) < 0.85:
+                            continue
+
                     detections.append(
                         {
                             "box": box,

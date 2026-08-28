@@ -90,8 +90,8 @@ class Settings:
     smoking_audio_file: Path = BASE_DIR / "static" / "audio" / "smoking_warning.mp3"
     fire_detection_enabled: bool = os.getenv("FIRE_DETECTION_ENABLED", "1").strip().lower() in {"1", "true", "yes"}
     fire_model: str = os.getenv("FIRE_MODEL", str(BASE_DIR / "models" / "fire_smoke_yolov8n.pt"))
-    fire_confidence: float = min(0.95, max(0.05, _float("FIRE_CONFIDENCE", 0.35)))
-    smoke_confidence: float = min(0.95, max(0.05, _float("SMOKE_CONFIDENCE", 0.35)))
+    fire_confidence: float = min(0.95, max(0.05, _float("FIRE_CONFIDENCE", 0.55)))
+    smoke_confidence: float = min(0.95, max(0.05, _float("SMOKE_CONFIDENCE", 0.45)))
     fire_process_interval: int = max(1, _int("FIRE_PROCESS_INTERVAL", 2))
     fire_debounce_seconds: float = max(0.5, _float("FIRE_DEBOUNCE_SECONDS", 1.0))
     smoke_emergency_debounce_seconds: float = max(0.5, _float("SMOKE_EMERGENCY_DEBOUNCE_SECONDS", 1.5))
