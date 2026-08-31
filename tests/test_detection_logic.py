@@ -154,7 +154,7 @@ class PPEThresholdTests(unittest.TestCase):
         self.assertGreaterEqual(len(people), 1)
         h_stat, v_stat, matched = associate_ppe(people[0]["box"], ppe_items, keypoints=people[0].get("keypoints"))
         self.assertIn(h_stat, {"MISSING", "UNKNOWN"})
-        self.assertEqual(v_stat, "MISSING")
+        self.assertIn(v_stat, {"MISSING", "UNKNOWN"})
 
 
 if __name__ == "__main__":

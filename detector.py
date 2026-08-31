@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
 import threading
 import time
+
+logger = logging.getLogger("detector")
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,7 +15,7 @@ import numpy as np
 
 try:
     from ultralytics import YOLO
-except ImportError:
+except (ImportError, OSError, Exception):
     YOLO = None  # type: ignore[misc,assignment]
 
 from audio import VoiceAlarm
@@ -1063,8 +1066,15 @@ class PersonMonitor:
     def _detect_and_track_people(self, frame: np.ndarray) -> list[dict[str, Any]]:
         if self._person_model is None:
             return []
+
+        h, w = frame.shape[:2]
+        small_w, small_h = 1024, 640
+        small_frame = cv2.resize(frame, (small_w, small_h), interpolation=cv2.INTER_LINEAR)
+        scale_x = w / float(small_w)
+        scale_y = h / float(small_h)
+
         results = self._person_model.track(
-            source=frame,
+            source=small_frame,
             conf=self.settings.yolo_confidence,
             iou=self.settings.yolo_iou,
             imgsz=self.settings.yolo_imgsz,
@@ -1074,12 +1084,12 @@ class PersonMonitor:
             tracker=self.settings.tracker_config,
             verbose=False,
         )
-        frame_area = max(1, frame.shape[0] * frame.shape[1])
+        frame_area = max(1, w * h)
         detections: list[dict[str, Any]] = []
         for result in results:
             if result.boxes is None:
                 continue
-            xyxy_values = result.boxes.xyxy.cpu().numpy().astype(int)
+            xyxy_values = result.boxes.xyxy.cpu().numpy()
             confidence_values = result.boxes.conf.cpu().numpy().tolist()
             ids = result.boxes.id
             track_ids = ids.int().cpu().tolist() if ids is not None else [None] * len(xyxy_values)
@@ -1093,58 +1103,42 @@ class PersonMonitor:
 
             for idx, (xyxy, confidence, track_id) in enumerate(zip(xyxy_values, confidence_values, track_ids)):
                 x1, y1, x2, y2 = xyxy.tolist()
-                box = (x1, y1, x2 - x1, y2 - y1)
+                orig_x1 = int(round(x1 * scale_x))
+                orig_y1 = int(round(y1 * scale_y))
+                orig_x2 = int(round(x2 * scale_x))
+                orig_y2 = int(round(y2 * scale_y))
+                box = (orig_x1, orig_y1, max(1, orig_x2 - orig_x1), max(1, orig_y2 - orig_y1))
                 area_ratio = _box_area(box) / frame_area
                 if max(box[2], box[3]) < self.settings.person_min_height or area_ratio < self.settings.person_min_area_ratio:
                     continue
                 if track_id is None:
                     track_id = self._fallback_track_id
                     self._fallback_track_id += 1
+
+                kps = None
+                if has_kps and kps_list[idx] is not None:
+                    kps = kps_list[idx].copy()
+                    kps[:, 0] *= scale_x
+                    kps[:, 1] *= scale_y
+
                 detections.append({
                     "id": int(track_id),
                     "box": box,
                     "confidence": float(confidence),
-                    "keypoints": kps_list[idx] if has_kps else None,
+                    "keypoints": kps,
                 })
-
-        # If person model detections lack keypoints and pose model is available, predict pose
-        if getattr(self, "_pose_model", None) is not None and any(d["keypoints"] is None for d in detections):
-            try:
-                pose_res = self._pose_model.predict(
-                    source=frame,
-                    conf=self.settings.yolo_confidence,
-                    iou=self.settings.yolo_iou,
-                    imgsz=self.settings.yolo_imgsz,
-                    device=self.settings.yolo_device,
-                    classes=[0],
-                    verbose=False,
-                )
-                if pose_res and pose_res[0].keypoints is not None and hasattr(pose_res[0].keypoints, "data"):
-                    pose_kps = pose_res[0].keypoints.data.cpu().numpy()
-                    pose_boxes = pose_res[0].boxes.xyxy.cpu().numpy() if pose_res[0].boxes is not None else []
-                    for d in detections:
-                        if d["keypoints"] is None:
-                            dx, dy, dw, dh = d["box"]
-                            d_center = (dx + dw / 2.0, dy + dh / 2.0)
-                            best_idx = None
-                            min_dist = 99999.0
-                            for p_idx, p_box in enumerate(pose_boxes):
-                                px1, py1, px2, py2 = p_box
-                                p_center = ((px1 + px2) / 2.0, (py1 + py2) / 2.0)
-                                dist = float(np.hypot(d_center[0] - p_center[0], d_center[1] - p_center[1]))
-                                if dist < min_dist and dist <= max(dw, dh) * 1.2:
-                                    min_dist = dist
-                                    best_idx = p_idx
-                            if best_idx is not None and best_idx < len(pose_kps):
-                                d["keypoints"] = pose_kps[best_idx]
-            except Exception:
-                pass
 
         return suppress_duplicate_people(detections, self.settings.person_duplicate_overlap)
 
     def _detect_ppe(self, frame: np.ndarray) -> list[dict[str, Any]]:
         if self._ppe_model is None:
             return []
+
+        h, w = frame.shape[:2]
+        small_w, small_h = 1024, 640
+        small_frame = cv2.resize(frame, (small_w, small_h), interpolation=cv2.INTER_LINEAR)
+        scale_x = w / float(small_w)
+        scale_y = h / float(small_h)
 
         models_to_run = [self._ppe_model]
         if getattr(self, "_ppe_model_v8n", None) is not None:
@@ -1153,7 +1147,7 @@ class PersonMonitor:
         detections: list[dict[str, Any]] = []
         for model in models_to_run:
             results = model.predict(
-                source=frame,
+                source=small_frame,
                 conf=self.settings.ppe_confidence,
                 iou=self.settings.ppe_iou,
                 imgsz=self.settings.ppe_imgsz,
@@ -1165,11 +1159,15 @@ class PersonMonitor:
                 if result.boxes is None:
                     continue
                 for xyxy, cls_id, confidence in zip(
-                    result.boxes.xyxy.cpu().numpy().astype(int),
+                    result.boxes.xyxy.cpu().numpy(),
                     result.boxes.cls.int().cpu().tolist(),
                     result.boxes.conf.cpu().numpy().tolist(),
                 ):
                     x1, y1, x2, y2 = xyxy.tolist()
+                    orig_x1 = int(round(x1 * scale_x))
+                    orig_y1 = int(round(y1 * scale_y))
+                    orig_x2 = int(round(x2 * scale_x))
+                    orig_y2 = int(round(y2 * scale_y))
                     label = str(names[int(cls_id)])
                     normalized_label = _normalize_label(label)
                     confidence = float(confidence)
@@ -1178,13 +1176,13 @@ class PersonMonitor:
 
                     # Dual verification for Safety Vest to eliminate false positives on civilian/side-profile clothing
                     if normalized_label in PPE_VEST_OK:
-                        crop = frame[max(0, y1):min(frame.shape[0], y2), max(0, x1):min(frame.shape[1], x2)]
+                        crop = frame[max(0, orig_y1):min(h, orig_y2), max(0, orig_x1):min(w, orig_x2)]
                         if not _has_hivis_colors(crop):
                             continue
 
                     detections.append(
                         {
-                            "box": (x1, y1, x2 - x1, y2 - y1),
+                            "box": (orig_x1, orig_y1, max(1, orig_x2 - orig_x1), max(1, orig_y2 - orig_y1)),
                             "label": label,
                             "normalized_label": normalized_label,
                             "confidence": confidence,
