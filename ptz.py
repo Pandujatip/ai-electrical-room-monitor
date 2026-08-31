@@ -130,6 +130,15 @@ class PTZController:
             return {"ok": True}
         return self._send_soap("ptz_service", body)
 
+    def step_move(self, direction: str, speed: int = 3, duration: float = 0.22) -> None:
+        """Execute a precise, non-overshooting step/pulse movement."""
+        import threading
+        def _pulse():
+            self.move(direction, speed=speed, async_call=False)
+            time.sleep(duration)
+            self.move("stop", async_call=False)
+        threading.Thread(target=_pulse, daemon=True).start()
+
     def continuous_scan_360(self, action: str = "start") -> dict[str, Any]:
         """Start or stop 360-degree horizontal continuous tour scan."""
         if action.lower() == "stop":

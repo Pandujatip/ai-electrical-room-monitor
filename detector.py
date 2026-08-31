@@ -947,21 +947,19 @@ class PersonMonitor:
                 self._is_patrolling = False
                 self._last_auto_track_dir = "stop"
                 self._last_auto_track_time = now
+                self._last_patrol_time = now
                 logger.info("Person detected during patrol! Auto holding position.")
 
             self._auto_track_last_seen = now
             self._at_home_position = False
+            self._last_patrol_time = now  # Tunda patroli selama orang masih di ruangan
 
             if not auto_track_enabled:
                 return
 
-            # Rate limit update PTZ setiap 0.12s
-            if now - self._last_auto_track_time < 0.12:
-                return
-
             h, w = frame_shape[:2]
             center_x = w / 2.0
-            deadzone = w * 0.08  # ±8% deadzone di tengah layar
+            deadzone = w * 0.14  # Zona toleransi lebar ±14% di tengah layar agar kamera tidak goyang/berputar
 
             # Pertahankan kunci target pada orang utama
             primary = None
@@ -977,8 +975,6 @@ class PersonMonitor:
             target_cx = float(bx + (bw / 2.0))
 
             offset_x = target_cx - center_x
-            norm_offset = abs(offset_x) / max(1.0, center_x)
-            speed = max(3, min(8, int(norm_offset * 10)))
 
             if abs(offset_x) <= deadzone:
                 # Orang berada di tengah / diam -> HOLD POSITION (Kamera Diam)
@@ -986,17 +982,13 @@ class PersonMonitor:
                     self.ptz.move("stop", async_call=True)
                     self._last_auto_track_dir = "stop"
                     self._last_auto_track_time = now
-            elif offset_x < -deadzone:
-                # Orang berjalan ke kiri -> Kamera ikuti ke Kiri
-                if self._last_auto_track_dir != "left":
-                    self.ptz.move("left", speed=speed, async_call=True)
-                    self._last_auto_track_dir = "left"
-                    self._last_auto_track_time = now
-            elif offset_x > deadzone:
-                # Orang berjalan ke kanan -> Kamera ikuti ke Kanan
-                if self._last_auto_track_dir != "right":
-                    self.ptz.move("right", speed=speed, async_call=True)
-                    self._last_auto_track_dir = "right"
+            else:
+                # Orang berjalan ke pinggir -> Berikan step move halus (tanpa continuous overshooting)
+                # Rate-limit step move minimal 0.45 detik jeda per tap
+                if now - self._last_auto_track_time >= 0.45:
+                    direction = "left" if offset_x < 0 else "right"
+                    self.ptz.step_move(direction, speed=2, duration=0.18)
+                    self._last_auto_track_dir = direction
                     self._last_auto_track_time = now
             return
 
@@ -1025,14 +1017,14 @@ class PersonMonitor:
                 logger.info("1 full patrol 360 completed with no person detected. Holding at Home position.")
             return
 
-        # 2c. Kembali ke posisi HOME jika orang sudah keluar ruangan (> 10 detik)
+        # 2c. Kembali ke posisi HOME jika orang sudah keluar ruangan (> 60 detik)
         if return_home_enabled and not self._at_home_position:
-            if self._auto_track_last_seen > 0 and (now - self._auto_track_last_seen) > 10.0:
+            if self._auto_track_last_seen > 0 and (now - self._auto_track_last_seen) > 60.0:
                 self.ptz.goto_preset(1)
                 self._at_home_position = True
                 self._auto_track_last_seen = 0.0
                 self._last_patrol_time = now
-                logger.info("Room empty for 10s. Returned to Home preset and holding position.")
+                logger.info("Room empty for 60s. Returned to Home preset and holding position.")
             return
 
         # 2d. Patroli Otomatis 1 Jam Sekali (Hourly Patrol 360 Tour)
@@ -1472,7 +1464,7 @@ class PersonMonitor:
                 if hand_near_mouth:
                     track["last_hand_at_mouth"] = now
 
-        stale = [track_id for track_id, track in self._tracks.items() if now - track["last_seen"] > 2.5]
+        stale = [track_id for track_id, track in self._tracks.items() if now - track["last_seen"] > 5.0]
         for track_id in stale:
             track = self._tracks.pop(track_id)
             stay = int(now - track["entered_at"])
