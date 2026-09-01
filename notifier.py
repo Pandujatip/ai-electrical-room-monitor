@@ -157,6 +157,11 @@ class NotificationManager:
     ) -> dict[str, Any]:
         try:
             payload = {"to": str(to).strip(), "message": message}
+            if not image_path:
+                fallback_snap = Path("static/snapshots/latest_snapshot.jpg")
+                if fallback_snap.exists():
+                    image_path = fallback_snap
+
             if image_path:
                 p = Path(image_path)
                 if p.exists():
@@ -192,6 +197,11 @@ class NotificationManager:
         target = self.settings.get("whatsapp_target", "").strip()
         if not target and not force:
             return False
+
+        if not image_path:
+            fallback_snap = Path("static/snapshots/latest_snapshot.jpg")
+            if fallback_snap.exists():
+                image_path = fallback_snap
 
         now = time.time()
         cooldown = float(self.settings.get("alert_cooldown_seconds", 3600))

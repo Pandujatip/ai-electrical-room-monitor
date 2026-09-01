@@ -930,7 +930,7 @@ class PersonMonitor:
                 logger.error("AI inference worker error: %s", exc)
 
     def _process_auto_tracking(self, frame_shape: tuple[int, ...]) -> None:
-        """Closed-loop AI Auto-Tracking with Smart Patrol, Auto Hold, and Hourly Tour."""
+        now = time.time()
         with self._lock:
             active_tracks = [t.copy() for t in self._tracks.values() if not t.get("lost", False)]
         auto_track_enabled = notifier.settings.get("auto_tracking_enabled", True)
@@ -1653,26 +1653,27 @@ class PersonMonitor:
             self._voice_alarm.enabled = bool(notifier.settings.get("voice_alarm_enabled", True))
 
         # Push to WhatsApp alerts if enabled
-        latest_snap_path = None
+        snap_dir = Path("static") / "snapshots"
+        snap_dir.mkdir(parents=True, exist_ok=True)
+        latest_snap_path = snap_dir / "latest_snapshot.jpg"
         if annotated is not None:
             now_mono = time.monotonic()
-            if now_mono - getattr(self, "_last_snap_save_time", 0.0) >= 3.0:
+            if now_mono - getattr(self, "_last_snap_save_time", 0.0) >= 0.8:
                 self._last_snap_save_time = now_mono
-                snap_dir = Path("static") / "snapshots"
-                snap_dir.mkdir(parents=True, exist_ok=True)
-                latest_snap_path = snap_dir / "latest_snapshot.jpg"
                 try:
                     cv2.imwrite(str(latest_snap_path), annotated)
                 except Exception as e:
                     logger.debug("Failed saving latest snapshot for alert: %s", e)
 
-                    # Dispatch fire & smoke emergency alerts immediately
-                    if self._fire_detected:
-                        notifier.notify_fire_emergency(cam_name, image_path=latest_snap_path)
-                    if self._smoke_emergency_detected:
-                        notifier.notify_smoke_emergency(cam_name, image_path=latest_snap_path)
+        snap_to_send = latest_snap_path if latest_snap_path.exists() else None
 
-        notifier.process_tracks_and_alerts(tracks, latest_snapshot_path=latest_snap_path)
+        # Dispatch fire & smoke emergency alerts immediately
+        if self._fire_detected:
+            notifier.notify_fire_emergency(cam_name, image_path=snap_to_send)
+        if self._smoke_emergency_detected:
+            notifier.notify_smoke_emergency(cam_name, image_path=snap_to_send)
+
+        notifier.process_tracks_and_alerts(tracks, latest_snapshot_path=snap_to_send)
 
     def _annotate(self, frame: np.ndarray) -> np.ndarray:
         output = frame.copy()
