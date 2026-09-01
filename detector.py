@@ -931,8 +931,8 @@ class PersonMonitor:
 
     def _process_auto_tracking(self, frame_shape: tuple[int, ...]) -> None:
         """Closed-loop AI Auto-Tracking with Smart Patrol, Auto Hold, and Hourly Tour."""
-        now = time.time()
-        active_tracks = [t for t in self._tracks.values() if not t.get("lost", False)]
+        with self._lock:
+            active_tracks = [t.copy() for t in self._tracks.values() if not t.get("lost", False)]
         auto_track_enabled = notifier.settings.get("auto_tracking_enabled", True)
         return_home_enabled = notifier.settings.get("auto_tracking_return_home", True)
         patrol_interval = float(notifier.settings.get("hourly_patrol_interval_seconds", 3600))  # 1 jam (3600s)
@@ -1464,11 +1464,17 @@ class PersonMonitor:
                 if hand_near_mouth:
                     track["last_hand_at_mouth"] = now
 
-        stale = [track_id for track_id, track in self._tracks.items() if now - track["last_seen"] > 5.0]
-        for track_id in stale:
-            track = self._tracks.pop(track_id)
-            stay = int(now - track["entered_at"])
-            name = track.get("name", f"Track {track_id}")
+        with self._lock:
+            stale = [track_id for track_id, track in self._tracks.items() if now - track["last_seen"] > 5.0]
+            exited_tracks = []
+            for track_id in stale:
+                track = self._tracks.pop(track_id)
+                stay = int(now - track["entered_at"])
+                name = track.get("name", f"Track {track_id}")
+                exited_tracks.append((name, stay))
+            tracks_copy = list(self._tracks.values())
+
+        for name, stay in exited_tracks:
             self.store.add_event(
                 self.settings.camera_name,
                 "PERSON_EXIT",
@@ -1476,7 +1482,7 @@ class PersonMonitor:
                 message=f"{name} keluar setelah {stay} detik",
             )
 
-        for track in self._tracks.values():
+        for track in tracks_copy:
             stay = now - track["entered_at"]
             if stay >= self.settings.max_stay_seconds and not track["overstay"]:
                 track["overstay"] = True
@@ -1504,7 +1510,9 @@ class PersonMonitor:
     def _update_ppe_states(self) -> None:
         if self._ppe_model is None:
             return
-        for track in self._tracks.values():
+        with self._lock:
+            tracks_copy = list(self._tracks.values())
+        for track in tracks_copy:
             helmet, vest, matched = associate_ppe(
                 track["box"],
                 self._latest_ppe,
@@ -1524,16 +1532,18 @@ class PersonMonitor:
             track[field] = votes[-1]
 
     def _evaluate_global_ppe_status(self) -> None:
-        if not self._tracks:
+        with self._lock:
+            tracks_copy = list(self._tracks.values())
+        if not tracks_copy:
             new_status = "NO_PERSON"
         elif any(
             track["helmet"] == "MISSING" or track["vest"] == "MISSING"
-            for track in self._tracks.values()
+            for track in tracks_copy
         ):
             new_status = "VIOLATION"
         elif all(
             track["helmet"] == "OK" and track["vest"] == "OK"
-            for track in self._tracks.values()
+            for track in tracks_copy
         ):
             new_status = "COMPLIANT"
         else:
@@ -1549,7 +1559,7 @@ class PersonMonitor:
         if now - self._last_ppe_event_time < self.settings.ppe_event_cooldown_seconds:
             return
         violations = []
-        for track in self._tracks.values():
+        for track in tracks_copy:
             t_name = track.get("name") or f"ID {track.get('id', '?')}"
             h_stat = track.get("helmet", "UNKNOWN")
             v_stat = track.get("vest", "UNKNOWN")
@@ -1579,9 +1589,11 @@ class PersonMonitor:
     def _publish_status(self, annotated: np.ndarray | None = None) -> None:
         now = time.monotonic()
         tracks = []
-        has_fallen = any(track.get("posture") == "FALLEN" for track in self._tracks.values())
-        has_smoking = any(track.get("is_smoking") for track in self._tracks.values())
-        for track in self._tracks.values():
+        with self._lock:
+            tracks_snapshot = [t.copy() for t in self._tracks.values()]
+        has_fallen = any(track.get("posture") == "FALLEN" for track in tracks_snapshot)
+        has_smoking = any(track.get("is_smoking") for track in tracks_snapshot)
+        for track in tracks_snapshot:
             lying_sec = int(now - track["lying_start_time"]) if track.get("lying_start_time") else 0
             tracks.append(
                 {
@@ -1620,10 +1632,10 @@ class PersonMonitor:
             score=float(len(tracks)),
             people_count=len(tracks),
             longest_stay_seconds=longest,
-            helmet_ok=sum(track["helmet"] == "OK" for track in self._tracks.values()),
-            helmet_missing=sum(track["helmet"] == "MISSING" for track in self._tracks.values()),
-            vest_ok=sum(track["vest"] == "OK" for track in self._tracks.values()),
-            vest_missing=sum(track["vest"] == "MISSING" for track in self._tracks.values()),
+            helmet_ok=sum(track["helmet"] == "OK" for track in tracks_snapshot),
+            helmet_missing=sum(track["helmet"] == "MISSING" for track in tracks_snapshot),
+            vest_ok=sum(track["vest"] == "OK" for track in tracks_snapshot),
+            vest_missing=sum(track["vest"] == "MISSING" for track in tracks_snapshot),
             fall_detected=has_fallen,
             smoking_detected=has_smoking,
             fire_detected=self._fire_detected,
@@ -1640,23 +1652,19 @@ class PersonMonitor:
         if hasattr(self, "_voice_alarm") and self._voice_alarm is not None:
             self._voice_alarm.enabled = bool(notifier.settings.get("voice_alarm_enabled", True))
 
-        # Check & dispatch WhatsApp snapshots
+        # Push to WhatsApp alerts if enabled
         latest_snap_path = None
         if annotated is not None:
-            if notifier.settings.get("whatsapp_enabled") and notifier.settings.get("whatsapp_target"):
-                has_any_person_alert = any(
-                    (t["stay_seconds"] >= notifier.settings.get("alert_ppe_violation_seconds", 60) and (t["helmet"] == "MISSING" or t["vest"] == "MISSING"))
-                    or (t["posture"] == "FALLEN" and t["lying_seconds"] >= 4)
-                    or (t["stay_seconds"] >= notifier.settings.get("alert_er_activity_seconds", 300))
-                    or t.get("is_smoking")
-                    for t in tracks
-                )
-                has_env_emergency = self._fire_detected or self._smoke_emergency_detected
-                if has_any_person_alert or has_env_emergency:
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    snap_file = self.settings.snapshots_dir / f"wa_alert_{timestamp}.jpg"
-                    cv2.imwrite(str(snap_file), annotated, [cv2.IMWRITE_JPEG_QUALITY, 85])
-                    latest_snap_path = snap_file
+            now_mono = time.monotonic()
+            if now_mono - getattr(self, "_last_snap_save_time", 0.0) >= 3.0:
+                self._last_snap_save_time = now_mono
+                snap_dir = Path("static") / "snapshots"
+                snap_dir.mkdir(parents=True, exist_ok=True)
+                latest_snap_path = snap_dir / "latest_snapshot.jpg"
+                try:
+                    cv2.imwrite(str(latest_snap_path), annotated)
+                except Exception as e:
+                    logger.debug("Failed saving latest snapshot for alert: %s", e)
 
                     # Dispatch fire & smoke emergency alerts immediately
                     if self._fire_detected:
@@ -1669,8 +1677,10 @@ class PersonMonitor:
     def _annotate(self, frame: np.ndarray) -> np.ndarray:
         output = frame.copy()
         now = time.monotonic()
-        has_fallen_global = any(track.get("posture") == "FALLEN" for track in self._tracks.values())
-        has_smoking_global = any(track.get("is_smoking") for track in self._tracks.values())
+        with self._lock:
+            tracks_snapshot = [t.copy() for t in self._tracks.values()]
+        has_fallen_global = any(track.get("posture") == "FALLEN" for track in tracks_snapshot)
+        has_smoking_global = any(track.get("is_smoking") for track in tracks_snapshot)
 
         # Responsive scaling based on stream resolution
         img_w = output.shape[1]
@@ -1697,7 +1707,7 @@ class PersonMonitor:
             cv2.putText(output, f_text, (bx + int(6 * scale), by - int(5 * scale)), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), font_thick, cv2.LINE_AA)
 
         # 2. Annotate People & PPE
-        for track in self._tracks.values():
+        for track in tracks_snapshot:
             x, y, w, h = track["box"]
             is_fallen = track.get("posture") == "FALLEN"
             is_smoking = track.get("is_smoking", False)
@@ -1822,7 +1832,7 @@ class PersonMonitor:
             header_color = (0, 0, 255) if ppe_status == "VIOLATION" else (255, 255, 255)
             cv2.putText(
                 output,
-                f"People: {len(self._tracks)} | PPE: {ppe_status}",
+                f"People: {len(tracks_snapshot)} | PPE: {ppe_status}",
                 (int(20 * scale), top_y),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 top_font_scale,
