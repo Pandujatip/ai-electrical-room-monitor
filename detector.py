@@ -979,8 +979,6 @@ class PersonMonitor:
                 return
 
             h, w = frame_shape[:2]
-            center_x = w / 2.0
-            deadzone = w * 0.14  # Zona toleransi lebar ±14% di tengah layar agar kamera tidak goyang/berputar
 
             # Pertahankan kunci target pada orang utama
             primary = None
@@ -991,26 +989,43 @@ class PersonMonitor:
                 primary = active_tracks[0]
                 self._auto_track_locked_id = primary.get("id")
 
+            # 1a. Jika orang sedang duduk atau terbaring/pingsan, KAMERA WAJIB DIAM TOTAL (HOLD POSITION)
+            is_static_posture = (
+                primary.get("is_lying", False)
+                or primary.get("posture") in ("FALLEN", "SUSPECTED_FALL", "SITTING")
+            )
+            if is_static_posture:
+                if self._last_auto_track_dir != "stop":
+                    self.ptz.move("stop", async_call=True)
+                    self._last_auto_track_dir = "stop"
+                    self._last_auto_track_time = now
+                return
+
+            # 1b. Periksa posisi horizontal orang
             box = primary.get("box", [0, 0, 0, 0])
             bx, by, bw, bh = box
             target_cx = float(bx + (bw / 2.0))
 
-            offset_x = target_cx - center_x
+            # Zona aman / toleransi sangat lebar: 18% sampai 82% dari lebar layar
+            # Selama orang masih di dalam area ini, kamera AUTO HOLD POSITION (Diam)
+            margin_left = w * 0.18
+            margin_right = w * 0.82
 
-            if abs(offset_x) <= deadzone:
-                # Orang berada di tengah / diam -> HOLD POSITION (Kamera Diam)
+            if margin_left <= target_cx <= margin_right:
+                # Orang berada di dalam area pandang yang aman -> KAMERA DIAM (STOP / HOLD)
                 if self._last_auto_track_dir != "stop":
                     self.ptz.move("stop", async_call=True)
                     self._last_auto_track_dir = "stop"
                     self._last_auto_track_time = now
             else:
-                # Orang berjalan ke pinggir -> Berikan step move halus (tanpa continuous overshooting)
-                # Rate-limit step move minimal 0.45 detik jeda per tap
-                if now - self._last_auto_track_time >= 0.45:
-                    direction = "left" if offset_x < 0 else "right"
-                    self.ptz.step_move(direction, speed=2, duration=0.18)
+                # Orang aktif berjalan mendekati batas tepi layar -> lakukan step move penyesuaian
+                # Anti-hunting: Cooldown minimal 2.5 detik agar kamera tidak bolak-balik kanan-kiri
+                if now - self._last_auto_track_time >= 2.5:
+                    direction = "left" if target_cx < margin_left else "right"
+                    self.ptz.step_move(direction, speed=1, duration=0.15)
                     self._last_auto_track_dir = direction
                     self._last_auto_track_time = now
+                    logger.info("Person moving towards frame edge (cx=%.1f). Adjusting camera %s.", target_cx, direction)
             return
 
         # ---------------------------------------------------------------------
