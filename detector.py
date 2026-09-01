@@ -334,7 +334,7 @@ def analyze_posture(
     valid_kps: dict[int, tuple[float, float]] | None = None,
     face_box: tuple[int, int, int, int] | None = None,
     angle_threshold: float = 38.0,
-    aspect_ratio_threshold: float = 1.35,
+    aspect_ratio_threshold: float = 1.25,
 ) -> tuple[str, float | None, bool]:
     """Analyze person posture from bounding box, anatomical keypoints, and face box.
 
@@ -345,15 +345,8 @@ def analyze_posture(
     px, py, pw, ph = person_box
     aspect_ratio = float(pw) / max(1.0, float(ph))
 
-    # If face box is present and occupies a normal upper-body proportion (e.g. webcam sitting view)
-    if face_box is not None:
-        fx, fy, fw, fh = face_box
-        face_ratio = float(fh) / max(1.0, float(ph))
-        if face_ratio >= 0.15 and fy <= py + ph * 0.50:
-            return "SITTING" if aspect_ratio >= 0.65 else "STANDING", None, False
-
     if not valid_kps:
-        if aspect_ratio >= 1.25:
+        if aspect_ratio >= aspect_ratio_threshold:
             return "FALLEN", None, True
         elif aspect_ratio >= 0.65:
             return "SITTING", None, False
@@ -385,7 +378,7 @@ def analyze_posture(
         head_horiz_diff = abs(sx - hx)
         head_neck_angle = float(np.degrees(np.arctan2(max(0.0, head_vert_diff), max(1e-4, head_horiz_diff))))
 
-        # If head is high above shoulders and upright
+        # If head is distinctly upright above shoulders
         if head_vert_diff > max(20.0, sh_dist * 0.25) and head_neck_angle >= 50.0:
             if hips and spine_angle is not None:
                 if spine_angle <= angle_threshold:
@@ -399,7 +392,7 @@ def analyze_posture(
     if len(wrists) >= 2 and len(shoulders) >= 2:
         wrist_span = abs(wrists[0][0] - wrists[1][0])
         shoulder_span = max(15.0, abs(shoulders[0][0] - shoulders[1][0]))
-        if wrist_span >= 1.45 * shoulder_span and aspect_ratio >= 0.55:
+        if wrist_span >= 1.35 * shoulder_span and aspect_ratio >= 0.55:
             return "FALLEN", spine_angle if spine_angle is not None else 0.0, True
 
     # 3. Check Torso (Shoulders to Hips)
@@ -412,15 +405,28 @@ def analyze_posture(
         if aspect_ratio >= 0.70 and (torso_dy <= max(35.0, pw * 0.40) or (len(knees) >= 2 and abs(knees[0][0] - knees[1][0]) >= 30.0)):
             return "FALLEN", spine_angle, True
 
+        # Check Head to Hips vertical diff (head dropped to floor level)
+        if head:
+            head_y = sum(p[1] for p in head) / len(head)
+            hip_y = sum(p[1] for p in hips) / len(hips)
+            if abs(head_y - hip_y) <= max(30.0, ph * 0.22) and aspect_ratio >= 0.65:
+                return "FALLEN", spine_angle, True
+
         if spine_angle <= 62.0:
             return "BENDING", spine_angle, False
         return "STANDING", spine_angle, False
 
     # 4. Pure Aspect Ratio for fallen (Horizontal on floor)
-    if aspect_ratio >= 1.25:
+    if aspect_ratio >= aspect_ratio_threshold:
         return "FALLEN", spine_angle if spine_angle is not None else 0.0, True
 
-    return "STANDING", None, False
+    if spine_angle is not None and spine_angle <= 62.0:
+        return "BENDING", spine_angle, False
+
+    if aspect_ratio >= 0.65:
+        return "SITTING", spine_angle, False
+
+    return "STANDING", spine_angle, False
 
 
 def analyze_smoking_gesture(
@@ -716,7 +722,16 @@ class PersonMonitor:
             self._detector_errors.append("Ultralytics belum terpasang pada environment server")
             return
         try:
-            self._person_model = YOLO(str(self._resolve_model_path(self.settings.yolo_model)))
+            model_target = self.settings.yolo_model
+            pose_path = self._resolve_model_path("yolo11n-pose.pt")
+            if not pose_path.exists():
+                pose_path = self._resolve_model_path("models/yolo11n-pose.pt")
+            if pose_path.exists() and "pose" not in str(model_target).lower():
+                model_target = str(pose_path)
+
+            resolved_person = self._resolve_model_path(model_target)
+            self._person_model = YOLO(str(resolved_person))
+            self._status["person_model"] = resolved_person.name
         except Exception as exc:
             self._detector_errors.append(f"Model person gagal dimuat: {exc}")
         try:
