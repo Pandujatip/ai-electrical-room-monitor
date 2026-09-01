@@ -383,6 +383,15 @@ def analyze_posture(
             if hips and spine_angle is not None:
                 if spine_angle <= angle_threshold:
                     return "FALLEN", spine_angle, True
+                # Lying down along corridor perspective (wide aspect ratio on floor with diagonal spine)
+                if aspect_ratio >= 0.75 and spine_angle <= 60.0:
+                    return "FALLEN", spine_angle, True
+                # Horizontal thighs on floor (hips and knees at same vertical level)
+                if knees:
+                    avg_hip_y = sum(p[1] for p in hips) / len(hips)
+                    avg_knee_y = sum(p[1] for p in knees) / len(knees)
+                    if abs(avg_hip_y - avg_knee_y) <= max(35.0, ph * 0.12) and aspect_ratio >= 0.70:
+                        return "FALLEN", spine_angle, True
                 elif spine_angle <= 62.0:
                     return "BENDING", spine_angle, False
                 return "STANDING", spine_angle, False
@@ -412,11 +421,29 @@ def analyze_posture(
             if abs(head_y - hip_y) <= max(30.0, ph * 0.22) and aspect_ratio >= 0.65:
                 return "FALLEN", spine_angle, True
 
+        # 4. Check Horizontal Thighs (Hips to Knees lying along corridor floor in perspective)
+        if knees:
+            avg_hip_y = sum(p[1] for p in hips) / len(hips)
+            avg_knee_y = sum(p[1] for p in knees) / len(knees)
+            if abs(avg_hip_y - avg_knee_y) <= max(35.0, ph * 0.12) and aspect_ratio >= 0.70:
+                return "FALLEN", spine_angle, True
+
+        # 5. Check Perspective Floor Fall: Diagonal spine + Wide Aspect Ratio on floor
+        if spine_angle <= 60.0 and aspect_ratio >= 0.80:
+            return "FALLEN", spine_angle, True
+
         if spine_angle <= 62.0:
             return "BENDING", spine_angle, False
         return "STANDING", spine_angle, False
 
-    # 4. Pure Aspect Ratio for fallen (Horizontal on floor)
+    # 6. Check Horizontal Thighs without hips if knees exist
+    if hips and knees:
+        avg_hip_y = sum(p[1] for p in hips) / len(hips)
+        avg_knee_y = sum(p[1] for p in knees) / len(knees)
+        if abs(avg_hip_y - avg_knee_y) <= max(35.0, ph * 0.12) and aspect_ratio >= 0.70:
+            return "FALLEN", spine_angle if spine_angle is not None else 0.0, True
+
+    # 7. Pure Aspect Ratio for fallen (Horizontal on floor)
     if aspect_ratio >= aspect_ratio_threshold:
         return "FALLEN", spine_angle if spine_angle is not None else 0.0, True
 
