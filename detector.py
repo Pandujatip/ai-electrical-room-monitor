@@ -367,7 +367,11 @@ def analyze_posture(
         hy = sum(p[1] for p in hips) / len(hips)
         spine_angle = float(np.degrees(np.arctan2(abs(sy - hy), max(1e-4, abs(sx - hx)))))
 
-    # 1. Check head-to-shoulder vertical orientation (for upright webcam / sitting view)
+    # 1. Torso uprightness check: If spine is upright (>= 65.0 deg), person is SITTING or STANDING
+    if spine_angle is not None and spine_angle >= 65.0:
+        return "SITTING" if aspect_ratio >= 0.65 else "STANDING", spine_angle, False
+
+    # 2. Check head-to-shoulder vertical orientation (for upright webcam / sitting view when hips not visible)
     if head and shoulders:
         hx = sum(p[0] for p in head) / len(head)
         hy = sum(p[1] for p in head) / len(head)
@@ -378,72 +382,40 @@ def analyze_posture(
         head_horiz_diff = abs(sx - hx)
         head_neck_angle = float(np.degrees(np.arctan2(max(0.0, head_vert_diff), max(1e-4, head_horiz_diff))))
 
-        # If head is distinctly upright above shoulders
-        if head_vert_diff > max(20.0, sh_dist * 0.25) and head_neck_angle >= 50.0:
-            if hips and spine_angle is not None:
-                if spine_angle <= angle_threshold:
-                    return "FALLEN", spine_angle, True
-                # Lying down along corridor perspective (wide aspect ratio on floor with diagonal spine)
-                if aspect_ratio >= 0.75 and spine_angle <= 60.0:
-                    return "FALLEN", spine_angle, True
-                # Horizontal thighs on floor (hips and knees at same vertical level)
-                if knees:
-                    avg_hip_y = sum(p[1] for p in hips) / len(hips)
-                    avg_knee_y = sum(p[1] for p in knees) / len(knees)
-                    if abs(avg_hip_y - avg_knee_y) <= max(35.0, ph * 0.12) and aspect_ratio >= 0.70:
-                        return "FALLEN", spine_angle, True
-                elif spine_angle <= 62.0:
-                    return "BENDING", spine_angle, False
-                return "STANDING", spine_angle, False
-            return "SITTING", head_neck_angle, False
+        # If head is distinctly upright above shoulders and no hips visible
+        if head_vert_diff > max(20.0, sh_dist * 0.25) and head_neck_angle >= 50.0 and not hips:
+            return "SITTING" if aspect_ratio >= 0.65 else "STANDING", head_neck_angle, False
 
-    # 2. Check Arm Span (Outstretched arms on floor - Prone / T-Pose fall)
+    # 3. Check Arm Span (Outstretched arms on floor - Prone / T-Pose fall)
+    # ONLY applies when spine is tilted/horizontal (not upright)
     if len(wrists) >= 2 and len(shoulders) >= 2:
         wrist_span = abs(wrists[0][0] - wrists[1][0])
         shoulder_span = max(15.0, abs(shoulders[0][0] - shoulders[1][0]))
-        if wrist_span >= 1.35 * shoulder_span and aspect_ratio >= 0.55:
-            return "FALLEN", spine_angle if spine_angle is not None else 0.0, True
+        if wrist_span >= 1.45 * shoulder_span and aspect_ratio >= 0.60:
+            if spine_angle is None or spine_angle <= 55.0:
+                return "FALLEN", spine_angle if spine_angle is not None else 0.0, True
 
-    # 3. Check Torso (Shoulders to Hips)
+    # 4. Check Torso (Shoulders to Hips)
     if shoulders and hips and spine_angle is not None:
+        # Torso horizontal on floor
         if spine_angle <= angle_threshold:
             return "FALLEN", spine_angle, True
 
-        # Prone fall along aisle: compressed vertical torso height or wide knee spread on floor
-        torso_dy = abs(sum(p[1] for p in shoulders) / len(shoulders) - sum(p[1] for p in hips) / len(hips))
-        if aspect_ratio >= 0.70 and (torso_dy <= max(35.0, pw * 0.40) or (len(knees) >= 2 and abs(knees[0][0] - knees[1][0]) >= 30.0)):
-            return "FALLEN", spine_angle, True
-
-        # Check Head to Hips vertical diff (head dropped to floor level)
-        if head:
-            head_y = sum(p[1] for p in head) / len(head)
-            hip_y = sum(p[1] for p in hips) / len(hips)
-            if abs(head_y - hip_y) <= max(30.0, ph * 0.22) and aspect_ratio >= 0.65:
+        # Lying down along corridor perspective: diagonal spine (<= 60 deg) + wide aspect ratio (>= 0.75) + horizontal thighs
+        if spine_angle <= 60.0 and aspect_ratio >= 0.75:
+            if knees:
+                avg_hip_y = sum(p[1] for p in hips) / len(hips)
+                avg_knee_y = sum(p[1] for p in knees) / len(knees)
+                if abs(avg_hip_y - avg_knee_y) <= max(35.0, ph * 0.15):
+                    return "FALLEN", spine_angle, True
+            else:
                 return "FALLEN", spine_angle, True
-
-        # 4. Check Horizontal Thighs (Hips to Knees lying along corridor floor in perspective)
-        if knees:
-            avg_hip_y = sum(p[1] for p in hips) / len(hips)
-            avg_knee_y = sum(p[1] for p in knees) / len(knees)
-            if abs(avg_hip_y - avg_knee_y) <= max(35.0, ph * 0.12) and aspect_ratio >= 0.70:
-                return "FALLEN", spine_angle, True
-
-        # 5. Check Perspective Floor Fall: Diagonal spine + Wide Aspect Ratio on floor
-        if spine_angle <= 60.0 and aspect_ratio >= 0.80:
-            return "FALLEN", spine_angle, True
 
         if spine_angle <= 62.0:
             return "BENDING", spine_angle, False
         return "STANDING", spine_angle, False
 
-    # 6. Check Horizontal Thighs without hips if knees exist
-    if hips and knees:
-        avg_hip_y = sum(p[1] for p in hips) / len(hips)
-        avg_knee_y = sum(p[1] for p in knees) / len(knees)
-        if abs(avg_hip_y - avg_knee_y) <= max(35.0, ph * 0.12) and aspect_ratio >= 0.70:
-            return "FALLEN", spine_angle if spine_angle is not None else 0.0, True
-
-    # 7. Pure Aspect Ratio for fallen (Horizontal on floor)
+    # 5. Pure Aspect Ratio for fallen (Horizontal on floor)
     if aspect_ratio >= aspect_ratio_threshold:
         return "FALLEN", spine_angle if spine_angle is not None else 0.0, True
 
