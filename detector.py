@@ -357,6 +357,7 @@ def analyze_posture(
     head = [valid_kps[k] for k in (KP_NOSE, KP_LEFT_EYE, KP_RIGHT_EYE, KP_LEFT_EAR, KP_RIGHT_EAR) if k in valid_kps]
     wrists = [valid_kps[k] for k in (KP_LEFT_WRIST, KP_RIGHT_WRIST) if k in valid_kps]
     knees = [valid_kps[k] for k in (KP_LEFT_KNEE, KP_RIGHT_KNEE) if k in valid_kps]
+    ankles = [valid_kps[k] for k in (KP_LEFT_ANKLE, KP_RIGHT_ANKLE) if k in valid_kps]
 
     # Calculate spine angle if both shoulders and hips are available
     spine_angle = None
@@ -367,60 +368,66 @@ def analyze_posture(
         hy = sum(p[1] for p in hips) / len(hips)
         spine_angle = float(np.degrees(np.arctan2(abs(sy - hy), max(1e-4, abs(sx - hx)))))
 
-    # 1. Torso uprightness check: If spine is upright (>= 65.0 deg), person is SITTING or STANDING
-    if spine_angle is not None and spine_angle >= 65.0:
-        return "SITTING" if aspect_ratio >= 0.65 else "STANDING", spine_angle, False
+        # 1. Check Floor Corridor Fall vs Sitting Cross-Legged
+        # In overhead CCTV looking down a corridor, a person lying flat on the floor has their
+        # body stretched out along the corridor (spine_angle in 2D image is 65-90 deg, similar to sitting).
+        # We distinguish lying flat from sitting via leg extension and ankle splay:
+        if aspect_ratio >= 0.60 and ankles:
+            torso_h = max(1.0, hy - sy)
+            ank_y = sum(p[1] for p in ankles) / len(ankles)
+            leg_len = max(0.0, ank_y - hy)
+            leg_ratio = leg_len / torso_h
+            sh_span = abs(shoulders[0][0] - shoulders[1][0]) if len(shoulders) >= 2 else max(15.0, pw * 0.3)
+            ank_span = abs(ankles[0][0] - ankles[1][0]) if len(ankles) >= 2 else 0.0
+            splay_ratio = ank_span / max(1.0, sh_span)
 
-    # 2. Check head-to-shoulder vertical orientation (for upright webcam / sitting view when hips not visible)
+            # Extended legs on floor or wide splayed ankles (FALLEN)
+            if leg_ratio >= 1.05 or splay_ratio >= 1.50:
+                return "FALLEN", spine_angle, True
+            # Folded legs under torso (SITTING)
+            elif leg_ratio <= 0.85:
+                return "SITTING", spine_angle, False
+
+        # 2. Torso uprightness check: If spine is upright (>= 65.0 deg), person is SITTING or STANDING
+        if spine_angle >= 65.0:
+            return "SITTING" if aspect_ratio >= 0.65 else "STANDING", spine_angle, False
+
+        # 3. Torso horizontal on floor
+        if spine_angle <= angle_threshold:
+            return "FALLEN", spine_angle, True
+
+        # 4. Lying down along corridor perspective: diagonal spine (<= 60 deg) + wide aspect ratio (>= 0.75)
+        if spine_angle <= 60.0 and aspect_ratio >= 0.75:
+            return "FALLEN", spine_angle, True
+
+        if spine_angle <= 62.0:
+            return "BENDING", spine_angle, False
+        return "STANDING", spine_angle, False
+
+    # 5. Check head-to-shoulder vertical orientation (for upright webcam / sitting view when hips not visible)
     if head and shoulders:
         hx = sum(p[0] for p in head) / len(head)
         hy = sum(p[1] for p in head) / len(head)
         sx = sum(p[0] for p in shoulders) / len(shoulders)
         sy = sum(p[1] for p in shoulders) / len(shoulders)
         sh_dist = abs(shoulders[0][0] - shoulders[1][0]) if len(shoulders) >= 2 else pw * 0.5
-        head_vert_diff = sy - hy  # positive when head is above shoulders
+        head_vert_diff = sy - hy
         head_horiz_diff = abs(sx - hx)
         head_neck_angle = float(np.degrees(np.arctan2(max(0.0, head_vert_diff), max(1e-4, head_horiz_diff))))
 
-        # If head is distinctly upright above shoulders and no hips visible
-        if head_vert_diff > max(20.0, sh_dist * 0.25) and head_neck_angle >= 50.0 and not hips:
+        if head_vert_diff > max(20.0, sh_dist * 0.25) and head_neck_angle >= 50.0:
             return "SITTING" if aspect_ratio >= 0.65 else "STANDING", head_neck_angle, False
 
-    # 3. Check Arm Span (Outstretched arms on floor - Prone / T-Pose fall)
-    # ONLY applies when spine is tilted/horizontal (not upright)
+    # 6. Check Arm Span (Outstretched arms on floor - Prone / T-Pose fall)
     if len(wrists) >= 2 and len(shoulders) >= 2:
         wrist_span = abs(wrists[0][0] - wrists[1][0])
         shoulder_span = max(15.0, abs(shoulders[0][0] - shoulders[1][0]))
         if wrist_span >= 1.45 * shoulder_span and aspect_ratio >= 0.60:
-            if spine_angle is None or spine_angle <= 55.0:
-                return "FALLEN", spine_angle if spine_angle is not None else 0.0, True
+            return "FALLEN", spine_angle if spine_angle is not None else 0.0, True
 
-    # 4. Check Torso (Shoulders to Hips)
-    if shoulders and hips and spine_angle is not None:
-        # Torso horizontal on floor
-        if spine_angle <= angle_threshold:
-            return "FALLEN", spine_angle, True
-
-        # Lying down along corridor perspective: diagonal spine (<= 60 deg) + wide aspect ratio (>= 0.75) + horizontal thighs
-        if spine_angle <= 60.0 and aspect_ratio >= 0.75:
-            if knees:
-                avg_hip_y = sum(p[1] for p in hips) / len(hips)
-                avg_knee_y = sum(p[1] for p in knees) / len(knees)
-                if abs(avg_hip_y - avg_knee_y) <= max(35.0, ph * 0.15):
-                    return "FALLEN", spine_angle, True
-            else:
-                return "FALLEN", spine_angle, True
-
-        if spine_angle <= 62.0:
-            return "BENDING", spine_angle, False
-        return "STANDING", spine_angle, False
-
-    # 5. Pure Aspect Ratio for fallen (Horizontal on floor)
+    # 7. Pure Aspect Ratio for fallen (Horizontal on floor)
     if aspect_ratio >= aspect_ratio_threshold:
         return "FALLEN", spine_angle if spine_angle is not None else 0.0, True
-
-    if spine_angle is not None and spine_angle <= 62.0:
-        return "BENDING", spine_angle, False
 
     if aspect_ratio >= 0.65:
         return "SITTING", spine_angle, False
@@ -1439,12 +1446,20 @@ class PersonMonitor:
 
             # Smoking gesture & vision analysis & tracking (Rokok Batang)
             if getattr(self.settings, "smoking_detection_enabled", True):
-                hand_near_mouth, dist_score = analyze_smoking_gesture(
-                    track["box"],
-                    valid_kps,
-                    face_box=face_box,
-                    frame=frame,
-                )
+                # Suppress smoking if person is lying down or fallen (hands holding phone or near chest while fallen)
+                if is_lying or posture == "FALLEN" or track.get("posture") in ("FALLEN", "SUSPECTED_FALL"):
+                    track["is_smoking"] = False
+                    track["smoking_start_time"] = None
+                    track["smoking_duration"] = 0
+                    track["smoking_alert_triggered"] = False
+                    hand_near_mouth = False
+                else:
+                    hand_near_mouth, dist_score = analyze_smoking_gesture(
+                        track["box"],
+                        valid_kps,
+                        face_box=face_box,
+                        frame=frame,
+                    )
                 smoking_threshold = float(notifier.settings.get("alert_smoking_seconds", getattr(self.settings, "smoking_debounce_seconds", 2.5)))
                 if hand_near_mouth:
                     if not track.get("smoking_start_time"):
